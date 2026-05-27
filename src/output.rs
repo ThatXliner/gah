@@ -46,7 +46,7 @@ pub fn format_preview(file: &DiffFile) -> String {
 
     for hunk in &file.hunks {
         out.push_str(&format!(
-            "\x1b[1;36m[{}]\x1b[0m \x1b[33m{}\x1b[0m {}\n",
+            "\x1b[1;36m[{}:\x1b[33m{}\x1b[1;36m]\x1b[0m {}\n",
             hunk.index, hunk.anchor, hunk.header
         ));
 

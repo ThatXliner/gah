@@ -33,13 +33,13 @@ gah preview src/main.rs --json
 
 Output:
 ```
-[1] Apparent @@ -341,7 +341,8 @@ fn render_key_summary(
+[1:Apparent] @@ -341,7 +341,8 @@ fn render_key_summary(
     context line
  + new line
  - old line
     context line
 
-[2] Caption @@ -363,7 +364,15 @@ fn render_binding_summary(
+[2:Caption] @@ -363,7 +364,15 @@ fn render_binding_summary(
     ...
 
 src/main.rs: 2 hunks
