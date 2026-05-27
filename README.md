@@ -16,6 +16,16 @@ Non-interactive hunk-based staging for git. Stage specific hunks by index, conte
 cargo install gah
 ```
 
+### Claude Code Plugin
+
+```bash
+/plugin install ThatXliner/gah
+```
+
+Claude Code will auto-use `gah` for selective staging instead of `git add -p`.
+
+For Codex or other AI agents, add the skill instructions from `skills/gah/SKILL.md` to your agent's context.
+
 ## Usage
 
 ### Preview hunks
