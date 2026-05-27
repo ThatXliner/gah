@@ -27,13 +27,21 @@ cargo install gah
 
 ### Claude Code
 
-Install the CLI above, then add the plugin for AI-aware usage:
+Install the CLI above, then choose one method:
 
-```
-/plugin install ThatXliner/gah
+**Plugin install (recommended):**
+```bash
+/plugin marketplace add ThatXliner/gah
+/plugin install gah@gah
 ```
 
-Claude Code will auto-use `gah` for selective staging instead of `git add -p`.
+**Manual skill copy:**
+```bash
+mkdir -p .claude/skills
+curl -o .claude/skills/gah.md https://raw.githubusercontent.com/ThatXliner/gah/main/skills/gah/SKILL.md
+```
+
+Either way, Claude Code will auto-use `gah` for selective staging instead of `git add -p`.
 
 ### Other AI Agents (Codex, Cursor, etc.)
 
