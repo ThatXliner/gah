@@ -58,7 +58,10 @@ fn format_preview_inner(file: &DiffFile, use_color: bool) -> String {
                 hunk.index, hunk.anchor, hunk.header
             ));
         } else {
-            out.push_str(&format!("[{}:{}] {}\n", hunk.index, hunk.anchor, hunk.header));
+            out.push_str(&format!(
+                "[{}:{}] {}\n",
+                hunk.index, hunk.anchor, hunk.header
+            ));
         }
 
         for line in &hunk.lines {
