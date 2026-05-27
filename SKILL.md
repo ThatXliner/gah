@@ -29,6 +29,10 @@ gah preview <file> --json
 gah add <file> --hunks 1,3,5
 gah add <file> --hunks 1-3
 
+# By anchor (stable content hash, survives line shifts)
+gah add <file> --anchor Apparent
+gah add <file> -a App     # prefix match works
+
 # By content pattern
 gah add <file> --grep "pattern"
 gah add <file> --grep "debug|console" --invert  # exclude
@@ -59,6 +63,7 @@ gah add <file> --hunks 1 --dry-run
   "hunks": [
     {
       "index": 1,
+      "anchor": "Apparent",
       "header": "@@ -10,5 +10,7 @@",
       "old_start": 10,
       "old_count": 5,
@@ -84,7 +89,7 @@ gah add <file> --hunks 1 --dry-run
 
 ## Tips
 
-- Always preview before staging to get current hunk indices
+- **Prefer anchors over indices** — anchors stay stable when other hunks are staged
 - Use `--dry-run` when unsure
 - Use `--json` for programmatic parsing
-- Hunk indices change after staging - re-preview if staging multiple batches
+- Hunk indices change after staging — anchors don't

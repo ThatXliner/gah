@@ -7,6 +7,7 @@ use crate::diff::Hunk;
 #[derive(Debug, Clone, Default)]
 pub struct HunkFilter {
     pub indices: Option<Vec<usize>>,
+    pub anchors: Option<Vec<String>>,
     pub grep: Option<Regex>,
     pub grep_invert: bool,
     pub lines: Option<Vec<(u32, u32)>>,
@@ -17,6 +18,16 @@ impl HunkFilter {
         // Index filter
         if let Some(ref indices) = self.indices {
             if !indices.contains(&hunk.index) {
+                return false;
+            }
+        }
+
+        // Anchor filter
+        if let Some(ref anchors) = self.anchors {
+            let matches = anchors.iter().any(|a| {
+                hunk.anchor.starts_with(a) || a.starts_with(&hunk.anchor)
+            });
+            if !matches {
                 return false;
             }
         }
@@ -125,8 +136,9 @@ mod tests {
     use super::*;
 
     fn make_hunk(index: usize, new_start: u32, new_count: u32, lines: Vec<DiffLine>) -> Hunk {
-        Hunk {
+        let mut hunk = Hunk {
             index,
+            anchor: String::new(),
             header: format!("@@ -1,1 +{new_start},{new_count} @@"),
             old_start: 1,
             old_count: 1,
@@ -134,7 +146,9 @@ mod tests {
             new_count,
             lines,
             function_context: None,
-        }
+        };
+        hunk.anchor = Hunk::compute_anchor(&hunk.content());
+        hunk
     }
 
     #[test]

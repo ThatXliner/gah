@@ -5,6 +5,7 @@ use crate::diff::{DiffFile, DiffLine, Hunk};
 #[derive(Serialize)]
 pub struct JsonHunk {
     pub index: usize,
+    pub anchor: String,
     pub header: String,
     pub old_start: u32,
     pub old_count: u32,
@@ -26,6 +27,7 @@ impl From<&Hunk> for JsonHunk {
     fn from(h: &Hunk) -> Self {
         JsonHunk {
             index: h.index,
+            anchor: h.anchor.clone(),
             header: h.header.clone(),
             old_start: h.old_start,
             old_count: h.old_count,
@@ -43,7 +45,10 @@ pub fn format_preview(file: &DiffFile) -> String {
     let mut out = String::new();
 
     for hunk in &file.hunks {
-        out.push_str(&format!("\x1b[1;36m[{}]\x1b[0m {}\n", hunk.index, hunk.header));
+        out.push_str(&format!(
+            "\x1b[1;36m[{}]\x1b[0m \x1b[33m{}\x1b[0m {}\n",
+            hunk.index, hunk.anchor, hunk.header
+        ));
 
         for line in &hunk.lines {
             match line {

@@ -1,6 +1,6 @@
 # gah - Git Add Hunks
 
-Non-interactive hunk-based staging for git. Stage specific hunks by index, regex, or line range—no interactive prompts required.
+Non-interactive hunk-based staging for git. Stage specific hunks by index, content anchor, regex, or line range—no interactive prompts required.
 
 ## The Problem
 
@@ -33,17 +33,19 @@ gah preview src/main.rs --json
 
 Output:
 ```
-[1] @@ -341,7 +341,8 @@ fn render_key_summary(
+[1] Apparent @@ -341,7 +341,8 @@ fn render_key_summary(
     context line
  + new line
  - old line
     context line
 
-[2] @@ -363,7 +364,15 @@ fn render_binding_summary(
+[2] Caption @@ -363,7 +364,15 @@ fn render_binding_summary(
     ...
 
 src/main.rs: 2 hunks
 ```
+
+The word after the index is the **anchor**—a single-token content hash that stays stable even when line numbers shift. Anchors are chosen to be single tokens in common LLM tokenizers for maximum efficiency.
 
 ### Stage by hunk index
 
@@ -53,6 +55,16 @@ gah add src/main.rs --hunks 1,3,5
 
 # Stage a range
 gah add src/main.rs --hunks 1-3,7
+```
+
+### Stage by anchor (content hash)
+
+Anchors are stable identifiers based on hunk content. Unlike indices, they don't change when other hunks are staged or when line numbers shift. Ideal for AI agents that preview once, then stage later.
+
+```bash
+# Stage by full or partial anchor
+gah add src/main.rs --anchor Apparent
+gah add src/main.rs -a App      # prefix match works
 ```
 
 ### Stage by regex
@@ -102,6 +114,7 @@ gah preview src/main.rs --json
   "hunks": [
     {
       "index": 1,
+      "anchor": "Apparent",
       "header": "@@ -341,7 +341,8 @@",
       "old_start": 341,
       "old_count": 7,

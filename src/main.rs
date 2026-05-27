@@ -48,6 +48,10 @@ enum Commands {
         #[arg(long)]
         hunks: Option<String>,
 
+        /// Content-hash anchors to stage (stable across re-runs)
+        #[arg(long, short = 'a')]
+        anchor: Option<Vec<String>>,
+
         /// Regex pattern to match hunk content
         #[arg(long)]
         grep: Option<String>,
@@ -159,6 +163,7 @@ fn main() {
         Commands::Add {
             file,
             hunks,
+            anchor,
             grep,
             invert,
             lines,
@@ -166,8 +171,8 @@ fn main() {
             json,
         } => {
             // Require at least one filter
-            if hunks.is_none() && grep.is_none() && lines.is_none() {
-                eprintln!("error: specify --hunks, --grep, or --lines");
+            if hunks.is_none() && anchor.is_none() && grep.is_none() && lines.is_none() {
+                eprintln!("error: specify --hunks, --anchor, --grep, or --lines");
                 exit(1);
             }
 
@@ -223,6 +228,21 @@ fn main() {
                         exit(1);
                     }
                 }
+            }
+
+            if let Some(ref anchors) = anchor {
+                // Validate anchors exist
+                for a in anchors {
+                    let found = diff_file
+                        .hunks
+                        .iter()
+                        .any(|h| h.anchor.starts_with(a) || a.starts_with(&h.anchor));
+                    if !found {
+                        eprintln!("error: no hunk matches anchor '{a}'");
+                        exit(1);
+                    }
+                }
+                hunk_filter.anchors = Some(anchors.clone());
             }
 
             if let Some(ref pattern) = grep {

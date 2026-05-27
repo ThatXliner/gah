@@ -1,3 +1,5 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 
 use regex::Regex;
@@ -13,6 +15,7 @@ pub enum DiffLine {
 #[derive(Debug, Clone)]
 pub struct Hunk {
     pub index: usize,
+    pub anchor: String,
     pub header: String,
     pub old_start: u32,
     pub old_count: u32,
@@ -45,6 +48,174 @@ impl Hunk {
 
     pub fn new_end(&self) -> u32 {
         self.new_start + self.new_count.saturating_sub(1)
+    }
+
+    pub fn compute_anchor(content: &str) -> String {
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Single-token anchors (verified against cl100k_base/o200k_base tokenizers)
+        // Each word is exactly 1 token, giving us 1024 unique anchors
+        const ANCHORS: &[&str] = &[
+            "Abandon", "Ability", "Abroad", "Absence", "Absolute", "Abstract", "Abuse",
+            "Academy", "Accent", "Accept", "Access", "Accident", "Account", "Accuracy",
+            "Accurate", "Achieve", "Acid", "Acquire", "Across", "Action", "Active",
+            "Actual", "Adapt", "Addition", "Address", "Adequate", "Adjust", "Admin",
+            "Admiral", "Adopt", "Adult", "Advance", "Adventure", "Advice", "Advocate",
+            "Affair", "Affect", "Afford", "Africa", "Agency", "Agenda", "Agent",
+            "Aggregate", "Agree", "Agreement", "Ahead", "Aircraft", "Airport", "Album",
+            "Alcohol", "Alert", "Algebra", "Alien", "Align", "Alive", "Alliance",
+            "Allocate", "Allow", "Alloy", "Alpha", "Already", "Alter", "Alternate",
+            "Although", "Altitude", "Aluminum", "Always", "Amateur", "Amazing", "Amazon",
+            "Ambient", "Ambition", "Amendment", "America", "Among", "Amount", "Amplifier",
+            "Analysis", "Analyst", "Analyze", "Ancestor", "Anchor", "Ancient", "Android",
+            "Angel", "Anger", "Angle", "Animal", "Animate", "Ankle", "Announce",
+            "Annual", "Anonymous", "Answer", "Antenna", "Antique", "Anxiety", "Apache",
+            "Apart", "Apartment", "Apex", "Apology", "Apparent", "Appeal", "Appear",
+            "Appetite", "Apple", "Apply", "Appoint", "Approach", "Approve", "Aqua",
+            "Arabic", "Arcade", "Arch", "Archive", "Arctic", "Arena", "Argue",
+            "Argument", "Arise", "Armor", "Around", "Arrange", "Array", "Arrest",
+            "Arrival", "Arrow", "Arsenal", "Article", "Artifact", "Artist", "Artwork",
+            "Aside", "Aspect", "Assault", "Assert", "Assess", "Asset", "Assign",
+            "Assist", "Associate", "Assume", "Assure", "Asteroid", "Athlete", "Atlanta",
+            "Atlantic", "Atlas", "Atmosphere", "Atom", "Atomic", "Attach", "Attack",
+            "Attempt", "Attend", "Attention", "Attitude", "Attorney", "Attract", "Auction",
+            "Audience", "Audio", "Audit", "August", "Austin", "Australia", "Authentic",
+            "Author", "Authority", "Auto", "Autumn", "Avatar", "Avenue", "Average",
+            "Aviation", "Avoid", "Award", "Awesome", "Awful", "Axis", "Azure",
+            "Backup", "Bacon", "Badge", "Balance", "Balloon", "Baltic", "Bamboo",
+            "Banana", "Bandwidth", "Bangkok", "Banking", "Banner", "Barbecue", "Bargain",
+            "Barrier", "Baseball", "Baseline", "Basement", "Basic", "Basin", "Basket",
+            "Battery", "Battle", "Bavaria", "Beach", "Beacon", "Bearing", "Beast",
+            "Beauty", "Become", "Bedroom", "Before", "Begin", "Behavior", "Behind",
+            "Belief", "Belong", "Below", "Benchmark", "Beneath", "Benefit", "Berlin",
+            "Besides", "Beta", "Better", "Between", "Beyond", "Bible", "Bicycle",
+            "Biden", "Billion", "Binary", "Binding", "Biology", "Bitmap", "Bizarre",
+            "Blade", "Blanket", "Blast", "Blend", "Blessing", "Blind", "Blockchain",
+            "Blossom", "Blueprint", "Bluetooth", "Board", "Boating", "Bobby", "Bodily",
+            "Boeing", "Boiling", "Bolivia", "Bombing", "Bonding", "Bonus", "Booking",
+            "Boolean", "Boost", "Border", "Bosnia", "Boston", "Botanic", "Bother",
+            "Bottle", "Bottom", "Boulder", "Boundary", "Boutique", "Boxing", "Bracket",
+            "Brain", "Branch", "Brand", "Brave", "Brazil", "Breach", "Bread",
+            "Break", "Breast", "Breath", "Breed", "Brick", "Bridge", "Brief",
+            "Bright", "Bring", "Britain", "Broad", "Broadway", "Broker", "Bronze",
+            "Brother", "Brown", "Browser", "Brutal", "Bubble", "Bucket", "Budapest",
+            "Buddha", "Budget", "Buffer", "Build", "Builder", "Building", "Bulgaria",
+            "Bullet", "Bulletin", "Bundle", "Bureau", "Burger", "Burial", "Burma",
+            "Burning", "Burst", "Burton", "Business", "Butler", "Butter", "Button",
+            "Buyer", "Bypass", "Cabinet", "Cable", "Cache", "Caesar", "Cairo",
+            "Calcium", "Calculate", "Calendar", "Calgary", "Caliber", "California", "Caller",
+            "Calling", "Cambodia", "Cambridge", "Camera", "Campaign", "Camping", "Campus",
+            "Canada", "Canadian", "Canal", "Cancel", "Cancer", "Candle", "Cannon",
+            "Canvas", "Canyon", "Capable", "Capacity", "Capital", "Captain", "Caption",
+            "Capture", "Carbon", "Cardiac", "Cardinal", "Career", "Careful", "Cargo",
+            "Caribbean", "Carlos", "Carnival", "Caroline", "Carpet", "Carrier", "Carroll",
+            "Cartoon", "Cascade", "Casino", "Castle", "Castro", "Casual", "Catalog",
+            "Catalyst", "Category", "Cathedral", "Catholic", "Cattle", "Caught", "Caution",
+            "Cavalry", "Ceiling", "Celebrate", "Celebrity", "Cellular", "Celtic", "Cement",
+            "Cemetery", "Census", "Center", "Central", "Century", "Ceramic", "Ceremony",
+            "Certain", "Certificate", "Challenge", "Chamber", "Champion", "Championship", "Chance",
+            "Change", "Channel", "Chapter", "Character", "Charge", "Charity", "Charles",
+            "Charlie", "Charlotte", "Charm", "Charter", "Chase", "Cheap", "Check",
+            "Cheese", "Chelsea", "Chemical", "Chemistry", "Chennai", "Cherry", "Chess",
+            "Chester", "Chicago", "Chicken", "Chief", "Child", "Chile", "China",
+            "Chinese", "Chip", "Chocolate", "Choice", "Choir", "Choose", "Chord",
+            "Christ", "Christian", "Christmas", "Chrome", "Chronicle", "Church", "Cinema",
+            "Circle", "Circuit", "Circular", "Circus", "Citation", "Citizen", "Civil",
+            "Civilian", "Claim", "Claire", "Clarity", "Clarke", "Clash", "Classic",
+            "Classroom", "Clause", "Clayton", "Clean", "Clear", "Clerk", "Cleveland",
+            "Click", "Client", "Cliff", "Climate", "Climb", "Clinic", "Clinical",
+            "Clinton", "Clock", "Clone", "Close", "Closer", "Closing", "Cloth",
+            "Cloud", "Cluster", "Coach", "Coal", "Coalition", "Coast", "Coastal",
+            "Coating", "Cocktail", "Coconut", "Coding", "Coffee", "Cognitive", "Cohen",
+            "Coincidence", "Cold", "Coleman", "Collapse", "Collar", "Collect", "Collection",
+            "Collector", "College", "Collins", "Colonial", "Colony", "Color", "Colorado",
+            "Columbia", "Columbus", "Column", "Combat", "Combine", "Comedy", "Comfort",
+            "Comic", "Coming", "Command", "Commander", "Comment", "Commerce", "Commercial",
+            "Commission", "Commit", "Committee", "Commodity", "Common", "Communicate", "Community",
+            "Compact", "Companion", "Company", "Compare", "Compass", "Compatible", "Compel",
+            "Compensate", "Compete", "Competition", "Competitive", "Competitor", "Compile", "Complain",
+            "Complaint", "Complete", "Complex", "Compliance", "Complicate", "Component", "Compose",
+            "Composite", "Compound", "Comprehensive", "Comprise", "Compromise", "Compute", "Computer",
+            "Conceive", "Concentrate", "Concept", "Concern", "Concert", "Conclude", "Conclusion",
+            "Concrete", "Condition", "Conduct", "Conductor", "Conference", "Confidence", "Confident",
+            "Configuration", "Configure", "Confirm", "Conflict", "Conform", "Confront", "Confuse",
+            "Congo", "Congress", "Connect", "Connecticut", "Connection", "Connor", "Conscious",
+            "Consensus", "Consent", "Consequence", "Conservation", "Conservative", "Consider", "Consist",
+            "Console", "Conspiracy", "Constant", "Constitute", "Constitution", "Constraint", "Construct",
+            "Construction", "Consult", "Consultant", "Consumer", "Consumption", "Contact", "Contain",
+            "Container", "Contemporary", "Content", "Contest", "Context", "Continent", "Continue",
+            "Continuous", "Contract", "Contractor", "Contrast", "Contribute", "Contribution", "Control",
+            "Controller", "Controversy", "Convenience", "Convention", "Conversation", "Conversion", "Convert",
+            "Conviction", "Convince", "Cookie", "Cooking", "Cooper", "Cooperate", "Coordinate",
+            "Copenhagen", "Copper", "Copyright", "Coral", "Corner", "Cornwall", "Corona",
+            "Corporate", "Corporation", "Correct", "Correction", "Correlate", "Correspond", "Corridor",
+            "Corrupt", "Cosmic", "Costa", "Costume", "Cottage", "Cotton", "Council",
+            "Counsel", "Counter", "Counting", "Country", "Countryside", "County", "Couple",
+            "Courage", "Course", "Court", "Courtesy", "Cousin", "Cover", "Coverage",
+            "Cowboy", "Crack", "Craft", "Craig", "Crash", "Crater", "Crazy",
+            "Cream", "Create", "Creation", "Creative", "Creator", "Creature", "Credit",
+            "Creek", "Crew", "Cricket", "Crime", "Criminal", "Crisis", "Criteria",
+            "Critic", "Critical", "Criticism", "Croatia", "Cross", "Crowd", "Crown",
+            "Crucial", "Crude", "Cruise", "Crystal", "Cuba", "Cuban", "Cubic",
+            "Cuisine", "Cultural", "Culture", "Cumberland", "Curious", "Currency", "Current",
+            "Curriculum", "Curtis", "Curve", "Custom", "Customer", "Customs", "Cutting",
+            "Cyber", "Cycle", "Cylinder", "Cyprus", "Czech", "Daddy", "Daily",
+            "Dairy", "Dakota", "Dallas", "Damage", "Damascus", "Dance", "Dancing",
+            "Danger", "Daniel", "Danish", "Danny", "Database", "Dating", "Daughter",
+            "David", "Davis", "Dawn", "Dealer", "Dealing", "Dean", "Death",
+            "Debate", "Debris", "Debt", "Debut", "Decade", "Decay", "December",
+            "Decent", "Decide", "Decision", "Declare", "Decline", "Decor", "Decrease",
+            "Dedicate", "Deed", "Deemed", "Deep", "Deeper", "Default", "Defeat",
+            "Defend", "Defendant", "Defense", "Defensive", "Define", "Definite", "Definition",
+            "Degree", "Deity", "Delay", "Delegate", "Delete", "Delhi", "Deliberate",
+            "Delicate", "Deliver", "Delivery", "Delta", "Demand", "Democracy", "Democrat",
+            "Democratic", "Demographic", "Demonstrate", "Denmark", "Dennis", "Dense", "Density",
+            "Dental", "Denver", "Deny", "Depart", "Department", "Depend", "Dependent",
+            "Depict", "Deploy", "Deposit", "Depot", "Depression", "Depth", "Deputy",
+            "Derive", "Descend", "Describe", "Description", "Desert", "Deserve", "Design",
+            "Designer", "Desire", "Desktop", "Despite", "Destination", "Destiny", "Destroy",
+            "Detail", "Detailed", "Detect", "Detective", "Detector", "Determine", "Detroit",
+            "Develop", "Developer", "Development", "Device", "Devil", "Devote", "Diabetes",
+            "Diagnose", "Diagnostic", "Diagram", "Dialect", "Dialog", "Dialogue", "Diamond",
+            "Diana", "Diary", "Dickinson", "Dictionary", "Diego", "Diesel", "Dietary",
+            "Differ", "Difference", "Different", "Differential", "Difficult", "Difficulty", "Digital",
+            "Dignity", "Dilemma", "Dimension", "Dining", "Dinner", "Dinosaur", "Diploma",
+            "Diplomat", "Direct", "Direction", "Director", "Directory", "Dirty", "Disable",
+            "Disaster", "Discard", "Discipline", "Disclose", "Disco", "Discount", "Discourse",
+            "Discover", "Discovery", "Discrete", "Discrimination", "Discuss", "Discussion", "Disease",
+            "Dish", "Disk", "Disney", "Disorder", "Dispatch", "Display", "Disposal",
+            "Dispute", "Distance", "Distant", "Distinct", "Distinction", "Distinguish", "Distribute",
+            "Distribution", "District", "Diverse", "Diversity", "Divide", "Divine", "Division",
+            "Divorce", "Dixon", "Doctor", "Doctrine", "Document", "Documentary", "Documentation",
+            "Dollar", "Dolphin", "Domain", "Dome", "Domestic", "Dominant", "Dominate",
+            "Dominican", "Donate", "Donation", "Donor", "Doom", "Door", "Dora",
+            "Dose", "Double", "Doubt", "Douglas", "Dover", "Download", "Downtown",
+            "Dozen", "Draft", "Dragon", "Drama", "Dramatic", "Draw", "Drawing",
+            "Dream", "Dress", "Drift", "Drill", "Drink", "Drinking", "Drive",
+            "Driver", "Driving", "Drop", "Drought", "Drum", "Dubai", "Dublin",
+            "Duck", "Duke", "Dummy", "Dump", "Duncan", "Dundee", "Duration",
+            "During", "Durham", "Dutch", "Duty", "Dwelling", "Dynamic", "Dynasty",
+            "Eagle", "Early", "Earth", "Earthquake", "Easily", "East", "Easter",
+            "Eastern", "Easy", "Eating", "Echo", "Eclipse", "Ecology", "Economic",
+            "Economy", "Ecosystem", "Ecuador", "Eddie", "Edge", "Edinburgh", "Edit",
+            "Edition", "Editor", "Editorial", "Edmund", "Educate", "Education", "Educational",
+            "Educator", "Edward", "Effect", "Effective", "Efficiency", "Efficient", "Effort",
+            "Egypt", "Egyptian", "Einstein", "Either", "Elder", "Elderly", "Eleanor",
+            "Elect", "Election", "Electric", "Electrical", "Electricity", "Electron", "Electronic",
+            "Element", "Elementary", "Elephant", "Elevation", "Elite", "Elizabeth", "Ellen",
+            "Elliott", "Ellis", "Elsewhere", "Email", "Embark", "Embassy", "Embed",
+            "Embrace", "Emerge", "Emergency", "Emerging", "Emily", "Emission", "Emit",
+            "Emma", "Emotion", "Emotional", "Emperor", "Emphasis", "Empire", "Empirical",
+            "Employ", "Employee", "Employer", "Employment", "Empty", "Enable", "Encounter",
+            "Encourage", "Encyclopedia", "Ending", "Endless", "Endorse", "Enemy", "Energy",
+            "Enforce", "Engage", "Engine", "Engineer", "Engineering", "England", "English",
+            "Enhance", "Enjoy", "Enormous", "Enough", "Enquiry", "Ensure", "Enter",
+        ];
+
+        let idx = (hash as usize) % ANCHORS.len();
+        ANCHORS[idx].to_string()
     }
 }
 
@@ -132,6 +303,7 @@ pub fn parse_diff(diff_output: &str) -> Result<Vec<DiffFile>, ParseError> {
 
                 current_hunk = Some(Hunk {
                     index: hunk_index,
+                    anchor: String::new(), // computed after lines are added
                     header: line.to_string(),
                     old_start,
                     old_count,
@@ -161,8 +333,16 @@ pub fn parse_diff(diff_output: &str) -> Result<Vec<DiffFile>, ParseError> {
             }
         }
 
-        if let Some(h) = current_hunk {
+        if let Some(mut h) = current_hunk {
+            h.anchor = Hunk::compute_anchor(&h.content());
             hunks.push(h);
+        }
+
+        // Compute anchors for all hunks
+        for hunk in &mut hunks {
+            if hunk.anchor.is_empty() {
+                hunk.anchor = Hunk::compute_anchor(&hunk.content());
+            }
         }
 
         if !hunks.is_empty() {

@@ -97,6 +97,7 @@ mod tests {
 
         let hunk = Hunk {
             index: 1,
+            anchor: "12345678".to_string(),
             header: "@@ -1,3 +1,4 @@".to_string(),
             old_start: 1,
             old_count: 3,
