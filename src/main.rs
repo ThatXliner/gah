@@ -2,6 +2,8 @@ mod apply;
 mod diff;
 mod filter;
 mod output;
+#[cfg(feature = "tree-sitter")]
+mod symbols;
 
 use std::path::PathBuf;
 use std::process::{Command, exit};
@@ -63,6 +65,10 @@ enum Commands {
         /// Line ranges in working tree (e.g., 100-150,200-250)
         #[arg(long)]
         lines: Option<String>,
+
+        /// AST symbol names to match (requires tree-sitter feature)
+        #[arg(long, short = 's')]
+        symbol: Option<Vec<String>>,
 
         /// Show what would be staged without actually staging
         #[arg(long)]
@@ -167,12 +173,33 @@ fn main() {
             grep,
             invert,
             lines,
+            symbol,
             dry_run,
             json,
         } => {
+            // Check for --symbol without feature
+            #[cfg(not(feature = "tree-sitter"))]
+            if symbol.is_some() {
+                eprintln!("error: --symbol requires the 'tree-sitter' feature");
+                eprintln!("hint: reinstall with: cargo install gah --features tree-sitter");
+                exit(1);
+            }
+
             // Require at least one filter
-            if hunks.is_none() && anchor.is_none() && grep.is_none() && lines.is_none() {
-                eprintln!("error: specify --hunks, --anchor, --grep, or --lines");
+            let has_filter = hunks.is_some()
+                || anchor.is_some()
+                || grep.is_some()
+                || lines.is_some()
+                || symbol.is_some();
+            if !has_filter {
+                #[cfg(feature = "tree-sitter")]
+                {
+                    eprintln!("error: specify --hunks, --anchor, --grep, --lines, or --symbol");
+                }
+                #[cfg(not(feature = "tree-sitter"))]
+                {
+                    eprintln!("error: specify --hunks, --anchor, --grep, or --lines");
+                }
                 exit(1);
             }
 
@@ -268,7 +295,50 @@ fn main() {
                 }
             }
 
-            let selected = filter_hunks(&diff_file.hunks, &hunk_filter);
+            #[cfg_attr(not(feature = "tree-sitter"), allow(unused_mut))]
+            let mut selected = filter_hunks(&diff_file.hunks, &hunk_filter);
+
+            // Apply symbol filter if specified (requires tree-sitter feature)
+            #[cfg(feature = "tree-sitter")]
+            if let Some(ref symbols_filter) = symbol {
+                // Read the working tree file to extract symbols
+                let source = match std::fs::read_to_string(&file) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("error reading file for symbol extraction: {e}");
+                        exit(1);
+                    }
+                };
+
+                let symbols = match symbols::extract_symbols(&source, &file) {
+                    Some(s) => s,
+                    None => {
+                        eprintln!(
+                            "error: cannot extract symbols from {} (unsupported language or parse error)",
+                            file.display()
+                        );
+                        exit(1);
+                    }
+                };
+
+                // Filter hunks that touch any of the specified symbols
+                selected = selected
+                    .into_iter()
+                    .filter(|h| {
+                        symbols_filter.iter().any(|sym| {
+                            symbols::hunk_matches_symbol(&symbols, h.new_start, h.new_end(), sym)
+                        })
+                    })
+                    .collect();
+
+                if selected.is_empty() {
+                    eprintln!(
+                        "error: no hunks match symbol(s): {}",
+                        symbols_filter.join(", ")
+                    );
+                    exit(1);
+                }
+            }
 
             if selected.is_empty() {
                 if let Some(ref pattern) = grep {

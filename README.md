@@ -110,6 +110,23 @@ gah add src/main.rs --lines 100-150
 gah add src/main.rs --lines 100-150,200-250
 ```
 
+### Stage by AST symbol (requires tree-sitter feature)
+
+Stage hunks that touch specific functions, classes, or other code symbols using tree-sitter AST analysis.
+
+```bash
+# Install with tree-sitter support
+cargo install gah --features tree-sitter
+
+# Stage hunks touching a function
+gah add app.py --symbol subtract
+
+# Multiple symbols
+gah add app.py --symbol subtract --symbol multiply
+```
+
+Supported languages: Python, JavaScript, TypeScript, Rust, Go.
+
 ### Combine filters
 
 ```bash
