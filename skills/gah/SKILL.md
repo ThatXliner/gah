@@ -12,7 +12,7 @@ Stage specific hunks non-interactively. Use instead of `git add -p` which requir
 1. **MUST use anchors, not indices** — Indices shift after each staging operation. Anchors stay stable.
 2. **MUST preview before staging** — Never guess hunk numbers. Always run `gah preview` first.
 3. **MUST use `--dry-run` for destructive or uncertain operations** — Verify before committing.
-4. **MUST use `--json` for programmatic decisions** — Parse structured output, don't regex text.
+4. **Use plain text output** — ANSI colors auto-disabled when piped. No need for `--json` in most cases.
 
 ## When to Use
 
@@ -38,8 +38,9 @@ Stage specific hunks non-interactively. Use instead of `git add -p` which requir
 ```bash
 gah preview <file>        # See all hunks with indices and anchors
 gah preview --all         # All modified files
-gah preview <file> --json # Machine-readable (use for programmatic decisions)
 ```
+
+Output is plain text when piped (no ANSI codes), so you can read it directly.
 
 ### Stage hunks
 
@@ -66,29 +67,6 @@ gah add <file> --grep "feature" --lines 50-200
 gah add <file> -a Foo --dry-run
 ```
 
-## JSON Output Schema
-
-```json
-{
-  "file": "path/to/file",
-  "hunks": [
-    {
-      "index": 1,
-      "anchor": "Apparent",
-      "header": "@@ -10,5 +10,7 @@",
-      "old_start": 10,
-      "old_count": 5,
-      "new_start": 10,
-      "new_count": 7,
-      "content": " context\n+added\n-removed",
-      "function_context": "fn example(",
-      "additions": 2,
-      "deletions": 1
-    }
-  ]
-}
-```
-
 ## Error Handling
 
 | Error | Cause | Fix |
@@ -104,14 +82,17 @@ gah add <file> -a Foo --dry-run
 Scenario: `src/auth.rs` has both a bugfix and debug logging.
 
 ```bash
-$ gah preview src/auth.rs --json
-{
-  "file": "src/auth.rs",
-  "hunks": [
-    {"index": 1, "anchor": "ValidateToken", "additions": 3, "deletions": 1},
-    {"index": 2, "anchor": "DebugPrint", "additions": 5, "deletions": 0}
-  ]
-}
+$ gah preview src/auth.rs
+[1:ValidateToken] @@ -45,7 +45,9 @@ fn validate_token(
+    context line
+ +  added line
+ -  removed line
+
+[2:DebugPrint] @@ -80,5 +82,10 @@ fn authenticate(
+    context line
+ +  println!("debug: token = {:?}", token);
+
+src/auth.rs: 2 hunks
 
 # Stage only the bugfix
 $ gah add src/auth.rs -a ValidateToken

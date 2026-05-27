@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 use serde::Serialize;
 
 use crate::diff::{DiffFile, DiffLine, Hunk};
@@ -42,30 +44,60 @@ impl From<&Hunk> for JsonHunk {
 }
 
 pub fn format_preview(file: &DiffFile) -> String {
+    let use_color = std::io::stdout().is_terminal();
+    format_preview_inner(file, use_color)
+}
+
+fn format_preview_inner(file: &DiffFile, use_color: bool) -> String {
     let mut out = String::new();
 
     for hunk in &file.hunks {
-        out.push_str(&format!(
-            "\x1b[1;36m[{}:\x1b[33m{}\x1b[1;36m]\x1b[0m {}\n",
-            hunk.index, hunk.anchor, hunk.header
-        ));
+        if use_color {
+            out.push_str(&format!(
+                "\x1b[1;36m[{}:\x1b[33m{}\x1b[1;36m]\x1b[0m {}\n",
+                hunk.index, hunk.anchor, hunk.header
+            ));
+        } else {
+            out.push_str(&format!("[{}:{}] {}\n", hunk.index, hunk.anchor, hunk.header));
+        }
 
         for line in &hunk.lines {
             match line {
                 DiffLine::Context(s) => out.push_str(&format!("   {s}\n")),
-                DiffLine::Add(s) => out.push_str(&format!("\x1b[32m + {s}\x1b[0m\n")),
-                DiffLine::Remove(s) => out.push_str(&format!("\x1b[31m - {s}\x1b[0m\n")),
+                DiffLine::Add(s) => {
+                    if use_color {
+                        out.push_str(&format!("\x1b[32m + {s}\x1b[0m\n"));
+                    } else {
+                        out.push_str(&format!(" + {s}\n"));
+                    }
+                }
+                DiffLine::Remove(s) => {
+                    if use_color {
+                        out.push_str(&format!("\x1b[31m - {s}\x1b[0m\n"));
+                    } else {
+                        out.push_str(&format!(" - {s}\n"));
+                    }
+                }
             }
         }
         out.push('\n');
     }
 
-    out.push_str(&format!(
-        "\x1b[1m{}\x1b[0m: {} hunk{}\n",
-        file.path.display(),
-        file.hunks.len(),
-        if file.hunks.len() == 1 { "" } else { "s" }
-    ));
+    if use_color {
+        out.push_str(&format!(
+            "\x1b[1m{}\x1b[0m: {} hunk{}\n",
+            file.path.display(),
+            file.hunks.len(),
+            if file.hunks.len() == 1 { "" } else { "s" }
+        ));
+    } else {
+        out.push_str(&format!(
+            "{}: {} hunk{}\n",
+            file.path.display(),
+            file.hunks.len(),
+            if file.hunks.len() == 1 { "" } else { "s" }
+        ));
+    }
 
     out
 }
