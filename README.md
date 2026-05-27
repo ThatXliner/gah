@@ -1,5 +1,11 @@
 # gah - Git Add Hunks
 
+[![CI](https://github.com/ThatXliner/gah/actions/workflows/ci.yml/badge.svg)](https://github.com/ThatXliner/gah/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/gah)](https://crates.io/crates/gah)
+[![Downloads](https://img.shields.io/crates/d/gah)](https://crates.io/crates/gah)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin-blueviolet)](https://github.com/ThatXliner/gah)
+
 Non-interactive hunk-based staging for git. Stage specific hunks by index, content anchor, regex, or line range—no interactive prompts required.
 
 ## The Problem
