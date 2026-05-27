@@ -1,0 +1,10 @@
+{
+  "name": "gah",
+  "description": "Non-interactive hunk staging for AI agents — use instead of git add -p",
+  "version": "0.1.0",
+  "author": {
+    "name": "ThatXliner"
+  },
+  "repository": "https://github.com/ThatXliner/gah",
+  "license": "MIT"
+}
