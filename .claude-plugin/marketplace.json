@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "gah",
-      "source": ".",
+      "source": "./",
       "description": "Non-interactive hunk staging for AI agents — use instead of git add -p"
     }
   ]
