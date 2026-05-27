@@ -76,7 +76,7 @@ fn test_preview_with_changes() {
         .current_dir(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("[1]"))
+        .stdout(predicate::str::contains("[1:"))
         .stdout(predicate::str::contains("modified"));
 }
 

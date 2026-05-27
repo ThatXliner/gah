@@ -16,17 +16,17 @@ pub struct HunkFilter {
 impl HunkFilter {
     pub fn matches(&self, hunk: &Hunk) -> bool {
         // Index filter
-        if let Some(ref indices) = self.indices {
-            if !indices.contains(&hunk.index) {
-                return false;
-            }
+        if let Some(ref indices) = self.indices
+            && !indices.contains(&hunk.index)
+        {
+            return false;
         }
 
         // Anchor filter
         if let Some(ref anchors) = self.anchors {
-            let matches = anchors.iter().any(|a| {
-                hunk.anchor.starts_with(a) || a.starts_with(&hunk.anchor)
-            });
+            let matches = anchors
+                .iter()
+                .any(|a| hunk.anchor.starts_with(a) || a.starts_with(&hunk.anchor));
             if !matches {
                 return false;
             }
@@ -191,18 +191,8 @@ mod tests {
     #[test]
     fn test_filter_by_grep() {
         let hunks = vec![
-            make_hunk(
-                1,
-                1,
-                5,
-                vec![DiffLine::Add("function foo()".to_string())],
-            ),
-            make_hunk(
-                2,
-                10,
-                5,
-                vec![DiffLine::Add("function bar()".to_string())],
-            ),
+            make_hunk(1, 1, 5, vec![DiffLine::Add("function foo()".to_string())]),
+            make_hunk(2, 10, 5, vec![DiffLine::Add("function bar()".to_string())]),
         ];
 
         let filter = HunkFilter {

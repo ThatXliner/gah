@@ -271,11 +271,8 @@ fn main() {
             let selected = filter_hunks(&diff_file.hunks, &hunk_filter);
 
             if selected.is_empty() {
-                if grep.is_some() {
-                    eprintln!(
-                        "No hunks match pattern '{}'",
-                        grep.as_ref().unwrap()
-                    );
+                if let Some(ref pattern) = grep {
+                    eprintln!("No hunks match pattern '{pattern}'");
                 } else {
                     eprintln!("No hunks match the specified filters");
                 }
