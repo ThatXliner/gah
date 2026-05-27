@@ -7,6 +7,8 @@
 
 Non-interactive hunk-based staging for git. Stage specific hunks by index, content anchor, regex, or line range—no interactive prompts required.
 
+![gah demo](demo.gif)
+
 ## The Problem
 
 `git add -p` is great for selective staging, but it requires interactive stdin. That makes it unusable for:
