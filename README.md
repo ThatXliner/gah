@@ -27,21 +27,20 @@ cargo install gah
 
 ### Claude Code
 
-Install the CLI above, then choose one method:
+Install the CLI above, then:
 
-**Plugin install (recommended):**
 ```bash
-/plugin marketplace add ThatXliner/claude-plugins
-/plugin install gah
+/plugin install ThatXliner/gah
 ```
 
-**Manual skill copy:**
+Or manually:
+
 ```bash
 mkdir -p .claude/skills
-curl -o .claude/skills/gah.md https://raw.githubusercontent.com/ThatXliner/gah/main/skills/gah/SKILL.md
+git clone https://github.com/ThatXliner/gah.git .claude/skills/gah
 ```
 
-Either way, Claude Code will auto-use `gah` for selective staging instead of `git add -p`.
+Claude Code will auto-use `gah` for selective staging instead of `git add -p`.
 
 ### Other AI Agents (Codex, Cursor, etc.)
 
