@@ -31,8 +31,8 @@ Install the CLI above, then choose one method:
 
 **Plugin install (recommended):**
 ```bash
-/plugin marketplace add ThatXliner/gah
-/plugin install gah@gah
+/plugin marketplace add ThatXliner/claude-plugins
+/plugin install gah
 ```
 
 **Manual skill copy:**
