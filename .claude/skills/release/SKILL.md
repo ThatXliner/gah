@@ -143,9 +143,6 @@ new dependents from selecting it; it does not remove the uploaded artifact. So:
 CI, and docs are excluded via `exclude = [...]` in `Cargo.toml` — if any of those
 reappear in the list, extend `exclude` before publishing.
 
-(Historical note: `demo.gif` is ~1.3MiB. It shipped inside 0.2.2 before the
-`exclude` was added; that artifact is immutable. Never let it back into the list.)
-
 ## Notes
 
 - Pushing tags, the GitHub release, and `cargo publish` are all outward-facing
