@@ -104,14 +104,22 @@ impl Hunk {
         // Git emits a replacement as a run of removals followed by a run of
         // additions (e.g. `-b -c -d +B +C +D`), so a remove and the add that
         // replaces it are NOT adjacent in `self.lines`. To stage by new-file
-        // line we must pair them positionally: removal *i* of a run lines up
-        // with addition *i*, both occupying new-file line `new_cursor + i`.
+        // line we pair them positionally: removal *i* lines up with addition
+        // *i*, both occupying new-file line `new_cursor + i`.
         //
-        // We walk the hunk, buffering each remove/add run, and flush the run as
-        // interleaved (remove, add) pairs in new-file order. For each pair we
-        // decide by its new-file line: in range -> keep the change; out of
-        // range -> leave that line untouched in the staged result (how depends
-        // on the pair's kind; see `flush`).
+        // The two runs need not be the same length. An unequal run is a
+        // collapse/expansion, and the surplus has no independent new-file line:
+        //   - surplus ADDS (more adds than removes): pure insertions, each on
+        //     its own new-file line.
+        //   - surplus REMOVES (more removes than adds): extra old lines folded
+        //     into the same edit. They occupy NO new-file line of their own, so
+        //     they share the in-range decision of the run's LAST new-file line
+        //     (where the additions land, or the run's start line if there are
+        //     no additions — a pure multi-line deletion).
+        //
+        // We walk the hunk, buffering each remove/add run, and flush the run in
+        // new-file order. In range -> keep the change; out of range -> leave the
+        // line untouched (removals demote to context, additions drop).
         let mut new_lines = Vec::with_capacity(self.lines.len());
         let mut new_cursor = self.new_start;
         let mut kept_change = false;
@@ -119,51 +127,70 @@ impl Hunk {
         let mut removes: Vec<&String> = Vec::new();
         let mut adds: Vec<&String> = Vec::new();
 
-        // Flush a buffered replacement run as positional pairs.
+        let in_range = |line: u32| ranges.iter().any(|(s, e)| line >= *s && line <= *e);
+
+        // Flush a buffered replacement run.
         let flush = |removes: &mut Vec<&String>,
                      adds: &mut Vec<&String>,
                      new_cursor: &mut u32,
                      new_lines: &mut Vec<DiffLine>,
                      kept_change: &mut bool| {
-            let pairs = removes.len().max(adds.len());
-            for i in 0..pairs {
-                let line = *new_cursor;
-                let in_range = ranges
-                    .iter()
-                    .any(|(start, end)| line >= *start && line <= *end);
-                let rem = removes.get(i);
-                let add = adds.get(i);
-                // Classify the position by the line it occupies in the *original*
-                // working tree — the coordinate space `ranges` is expressed in:
-                //   replacement  (rem + add) -> occupies a new-file line
-                //   pure insert  (add only)  -> occupies a new-file line
-                //   pure delete  (rem only)  -> occupies NO new-file line
-                // Only positions that occupy a new-file line advance the cursor,
-                // so a deletion never shifts later changes off their line numbers.
-                if in_range {
-                    if let Some(r) = rem {
-                        new_lines.push(DiffLine::Remove((*r).clone()));
-                        *kept_change = true;
-                    }
-                    if let Some(a) = add {
-                        new_lines.push(DiffLine::Add((*a).clone()));
-                        *kept_change = true;
-                    }
+            // Emit a removal kept (in range) or demoted to context (out of
+            // range, so the old line stays and the patch is contiguous).
+            let emit_remove = |r: &str, in_r: bool, nl: &mut Vec<DiffLine>, kept: &mut bool| {
+                if in_r {
+                    nl.push(DiffLine::Remove(r.to_string()));
+                    *kept = true;
                 } else {
-                    // Out of range: leave the line untouched in the staged tree.
-                    // Any removal (replacement OR pure deletion) demotes to
-                    // context so the patch stays contiguous and `git apply`
-                    // doesn't fuzz; the addition of a replacement drops, and a
-                    // pure insertion drops (it has no old line to keep).
-                    if let Some(r) = rem {
-                        new_lines.push(DiffLine::Context((*r).clone()));
+                    nl.push(DiffLine::Context(r.to_string()));
+                }
+            };
+
+            let pairs = removes.len().min(adds.len());
+            // New-file line the surplus removals fold into: the run's last
+            // new-file line (the final added line), or — when the run has no
+            // additions at all (pure multi-line deletion) — its start line.
+            let fold_line = *new_cursor + (pairs.max(1) - 1) as u32;
+
+            // Paired positions, interleaved (removal then its addition) on
+            // new-file line new_cursor+i, mirroring `git add -p`. Surplus
+            // removals belong to the same edit as the last pair, so emit them
+            // alongside it (right after pair `pairs-1`) bound to `fold_line`.
+            for i in 0..pairs {
+                let line = *new_cursor + i as u32;
+                let r = in_range(line);
+                emit_remove(removes[i], r, new_lines, kept_change);
+                if i == pairs - 1 {
+                    let fr = in_range(fold_line);
+                    for rem in removes.iter().skip(pairs) {
+                        emit_remove(rem, fr, new_lines, kept_change);
                     }
                 }
-
-                if add.is_some() {
-                    *new_cursor += 1;
+                if r {
+                    new_lines.push(DiffLine::Add(adds[i].clone()));
+                    *kept_change = true;
                 }
             }
+            // Run with no paired positions: either surplus removals only (a pure
+            // deletion run) or surplus additions only (a pure insertion run).
+            if pairs == 0 {
+                let fr = in_range(fold_line);
+                for rem in removes.iter() {
+                    emit_remove(rem, fr, new_lines, kept_change);
+                }
+            }
+            // Surplus additions: pure insertions, each on its own new-file line.
+            for (i, add) in adds.iter().enumerate().skip(pairs) {
+                let line = *new_cursor + i as u32;
+                if in_range(line) {
+                    new_lines.push(DiffLine::Add((*add).clone()));
+                    *kept_change = true;
+                }
+            }
+            // Only additions occupy new-file lines; advance the cursor past them.
+            // Removals (paired or surplus) never advance it.
+            *new_cursor += adds.len() as u32;
+
             removes.clear();
             adds.clear();
         };
@@ -1694,6 +1721,96 @@ Binary files a/image.png and b/image.png differ
 
         // Stage only new-line 1 (the deletion's predecessor): nothing changes
         // there, and the in-range replacement at line 3 is left untouched.
+        assert!(hunk.restrict_to_lines(&[(1, 1)]).is_none());
+    }
+
+    fn collapse_hunk() -> Hunk {
+        // Collapse b,c -> B. git groups removals before additions, so the run
+        // has 2 removes and 1 add; both deletions land on new-line 2.
+        //   a / -b -c / +B / d   (new lines a=1, B=2, d=3)
+        let mut hunk = Hunk {
+            index: 1,
+            anchor: String::new(),
+            header: "@@ -1,4 +1,3 @@".to_string(),
+            old_start: 1,
+            old_count: 4,
+            new_start: 1,
+            new_count: 3,
+            lines: vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Remove("b".to_string()),
+                DiffLine::Remove("c".to_string()),
+                DiffLine::Add("B".to_string()),
+                DiffLine::Context("d".to_string()),
+            ],
+            function_context: None,
+        };
+        hunk.anchor = Hunk::compute_anchor(&hunk.content());
+        hunk
+    }
+
+    #[test]
+    fn test_restrict_collapse_keeps_all_deletions() {
+        // Staging new-line 2 must keep BOTH surplus deletions (b AND c) — they
+        // are one edit. A naive positional pairing drops `c` as if it sat on a
+        // separate new-line 3.
+        let trimmed = collapse_hunk().restrict_to_lines(&[(2, 2)]).unwrap();
+        assert_eq!(
+            trimmed.lines,
+            vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Remove("b".to_string()),
+                DiffLine::Remove("c".to_string()),
+                DiffLine::Add("B".to_string()),
+                DiffLine::Context("d".to_string()),
+            ]
+        );
+        assert_eq!(trimmed.old_count, 4);
+        assert_eq!(trimmed.new_count, 3);
+    }
+
+    #[test]
+    fn test_restrict_collapse_following_line_unchanged() {
+        // New-line 3 is the unchanged `d`; the surplus deletion of `c` must not
+        // be misattributed to it, so the range yields no change.
+        assert!(collapse_hunk().restrict_to_lines(&[(3, 3)]).is_none());
+    }
+
+    #[test]
+    fn test_restrict_pure_multiline_deletion() {
+        // Pure deletion run (no adds): b,c deleted, nothing added.
+        //   a / -b -c / d   (new lines a=1, d=2; the deletion sits at line 2)
+        let mut hunk = Hunk {
+            index: 1,
+            anchor: String::new(),
+            header: "@@ -1,4 +1,2 @@".to_string(),
+            old_start: 1,
+            old_count: 4,
+            new_start: 1,
+            new_count: 2,
+            lines: vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Remove("b".to_string()),
+                DiffLine::Remove("c".to_string()),
+                DiffLine::Context("d".to_string()),
+            ],
+            function_context: None,
+        };
+        hunk.anchor = Hunk::compute_anchor(&hunk.content());
+
+        // The deletion occupies new-line 2 (where `d` now sits). Staging line 2
+        // keeps both deletions.
+        let trimmed = hunk.restrict_to_lines(&[(2, 2)]).unwrap();
+        assert_eq!(
+            trimmed.lines,
+            vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Remove("b".to_string()),
+                DiffLine::Remove("c".to_string()),
+                DiffLine::Context("d".to_string()),
+            ]
+        );
+        // Line 1 (`a`, unchanged) -> nothing to stage.
         assert!(hunk.restrict_to_lines(&[(1, 1)]).is_none());
     }
 }

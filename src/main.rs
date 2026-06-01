@@ -377,16 +377,23 @@ fn main() {
             // outside become dropped, removals outside become context. Owned
             // results live in `trimmed` so `selected` can re-borrow them.
             let trimmed: Vec<crate::diff::Hunk>;
+            // Did `--lines` trimming empty an otherwise non-empty selection?
+            // That points the blame at the range, not the other filters.
+            let mut emptied_by_lines = false;
             if let Some(ref ranges) = hunk_filter.lines {
+                let had_hunks = !selected.is_empty();
                 trimmed = selected
                     .iter()
                     .filter_map(|h| h.restrict_to_lines(ranges))
                     .collect();
                 selected = trimmed.iter().collect();
+                emptied_by_lines = had_hunks && selected.is_empty();
             }
 
             if selected.is_empty() {
-                if let Some(ref pattern) = grep {
+                if emptied_by_lines {
+                    eprintln!("No changed lines in the specified --lines range(s)");
+                } else if let Some(ref pattern) = grep {
                     eprintln!("No hunks match pattern '{pattern}'");
                 } else {
                     eprintln!("No hunks match the specified filters");

@@ -340,6 +340,45 @@ fn test_lines_with_unstaged_deletion_before_change() {
 }
 
 #[test]
+fn test_lines_collapse_stages_all_deletions() {
+    let dir = setup_git_repo();
+    // Collapse two lines into one (b,c -> B). git emits `-b -c +B`: the run has
+    // more removals than additions, so both deletions belong to the single
+    // edit at new-line 2. Staging --lines 2 must keep BOTH deletions, not just
+    // the first — otherwise the index keeps a stray `c`.
+    commit_initial(&dir, "f.txt", "a\nb\nc\nd\n");
+    fs::write(dir.path().join("f.txt"), "a\nB\nd\n").unwrap();
+
+    Command::cargo_bin("gah")
+        .unwrap()
+        .args(["add", "f.txt", "--lines", "2"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    assert_eq!(staged_content(&dir, "f.txt"), "a\nB\nd\n");
+}
+
+#[test]
+fn test_lines_collapse_no_change_at_following_line() {
+    let dir = setup_git_repo();
+    // Same collapse; new-line 3 is the unchanged `d`. The surplus deletion of
+    // `c` must NOT be misattributed to new-line 3, so nothing matches there.
+    commit_initial(&dir, "f.txt", "a\nb\nc\nd\n");
+    fs::write(dir.path().join("f.txt"), "a\nB\nd\n").unwrap();
+
+    Command::cargo_bin("gah")
+        .unwrap()
+        .args(["add", "f.txt", "--lines", "3"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "No changed lines in the specified --lines range",
+        ));
+}
+
+#[test]
 fn test_lines_no_match_in_range() {
     let dir = setup_git_repo();
     commit_initial(&dir, "g.txt", "a\nb\nc\n");
