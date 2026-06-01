@@ -43,8 +43,57 @@ impl From<&Hunk> for JsonHunk {
     }
 }
 
+/// Detect whether gah is running under an AI coding agent.
+///
+/// Agents capture stdout as text and choke on ANSI escapes, so color must be
+/// suppressed even when stdout happens to be a TTY. Mirrors the env probes used
+/// by other agent-aware CLIs.
+fn is_agent() -> bool {
+    fn env_set(key: &str) -> bool {
+        std::env::var_os(key).is_some_and(|v| !v.is_empty())
+    }
+
+    // Explicit, standardized signal.
+    if env_set("AI_AGENT") {
+        return true;
+    }
+
+    const AGENT_ENV_VARS: &[&str] = &[
+        "CURSOR_TRACE_ID",
+        "CURSOR_AGENT",
+        "GEMINI_CLI",
+        "CODEX_SANDBOX",
+        "CODEX_CI",
+        "CODEX_THREAD_ID",
+        "ANTIGRAVITY_AGENT",
+        "AUGMENT_AGENT",
+        "OPENCODE_CLIENT",
+        "CLAUDECODE",
+        "CLAUDE_CODE",
+        "REPL_ID",
+        "COPILOT_MODEL",
+        "COPILOT_ALLOW_ALL",
+        "COPILOT_GITHUB_TOKEN",
+    ];
+    if AGENT_ENV_VARS.iter().any(|k| env_set(k)) {
+        return true;
+    }
+
+    // Cursor's VS Code extension host running in agent-exec mode.
+    if std::env::var("CURSOR_EXTENSION_HOST_ROLE").as_deref() == Ok("agent-exec") {
+        return true;
+    }
+
+    // Devin marks its sandbox with a well-known path rather than an env var.
+    if std::path::Path::new("/opt/.devin").exists() {
+        return true;
+    }
+
+    false
+}
+
 pub fn format_preview(file: &DiffFile) -> String {
-    let use_color = std::io::stdout().is_terminal();
+    let use_color = std::io::stdout().is_terminal() && !is_agent();
     format_preview_inner(file, use_color)
 }
 
