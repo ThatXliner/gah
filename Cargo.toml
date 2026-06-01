@@ -7,6 +7,16 @@ license = "MIT"
 repository = "https://github.com/ThatXliner/gah"
 keywords = ["git", "staging", "hunks", "cli", "automation"]
 categories = ["command-line-utilities", "development-tools"]
+exclude = [
+    "demo.gif",
+    "demo.tape",
+    "demo-setup.sh",
+    "docs/",
+    "skills/",
+    ".claude/",
+    ".claude-plugin/",
+    ".github/",
+]
 
 [features]
 default = []
