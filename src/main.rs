@@ -224,11 +224,16 @@ fn main() {
             }
 
             // --split needs fine-grained hunks: re-diff at zero context so each
-            // change is its own hunk. --lines keeps the default context so the
-            // trimmed patch retains surrounding anchor lines (a zero-context
-            // single insertion is placed unreliably by `git apply`); trimming
-            // to the exact range happens after selection (below).
-            let unified = if split { Some(0) } else { None };
+            // change is its own hunk. --lines does its own trimming after
+            // selection (below) and relies on the default context to retain
+            // surrounding anchor lines (a zero-context single insertion is
+            // placed unreliably by `git apply`), so --lines takes precedence:
+            // when both are given, --split is ignored and default context kept.
+            let unified = if split && lines.is_none() {
+                Some(0)
+            } else {
+                None
+            };
 
             let diff_output = match get_diff(Some(&file), unified) {
                 Ok(d) => d,

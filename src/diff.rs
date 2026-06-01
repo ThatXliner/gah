@@ -92,10 +92,9 @@ impl Hunk {
 
     /// Restrict this hunk to only the changes whose new-file line numbers fall
     /// within any of `ranges` (inclusive). Changes outside every range are
-    /// neutralized: a replacement keeps its old line (its removal demotes to
-    /// context, its addition drops), a pure insertion drops, and a pure
-    /// deletion drops (its old line stays). A result with no remaining change
-    /// yields `None`.
+    /// neutralized so the line is left untouched in the staged tree: any
+    /// removal (from a replacement or a pure deletion) demotes to context,
+    /// and any addition drops. A result with no remaining change yields `None`.
     ///
     /// This is the non-interactive equivalent of `git add -p`'s edit mode: it
     /// lets a single hunk be staged piecewise. Trimming can leave few or zero
@@ -134,11 +133,13 @@ impl Hunk {
                     .any(|(start, end)| line >= *start && line <= *end);
                 let rem = removes.get(i);
                 let add = adds.get(i);
-                // Classify the position by what occupies new-file line `line`:
-                //   replacement  (rem + add) -> occupies the line
-                //   pure insert  (add only)  -> occupies the line
+                // Classify the position by the line it occupies in the *original*
+                // working tree — the coordinate space `ranges` is expressed in:
+                //   replacement  (rem + add) -> occupies a new-file line
+                //   pure insert  (add only)  -> occupies a new-file line
                 //   pure delete  (rem only)  -> occupies NO new-file line
-                // Only positions that occupy a new-file line advance the cursor.
+                // Only positions that occupy a new-file line advance the cursor,
+                // so a deletion never shifts later changes off their line numbers.
                 if in_range {
                     if let Some(r) = rem {
                         new_lines.push(DiffLine::Remove((*r).clone()));
@@ -148,18 +149,16 @@ impl Hunk {
                         new_lines.push(DiffLine::Add((*a).clone()));
                         *kept_change = true;
                     }
-                } else if add.is_some() {
-                    // Out-of-range position that occupies a new-file line:
-                    // a replacement demotes its removal to context (the old
-                    // line survives unchanged); a pure insertion is dropped
-                    // (it isn't in the old file, so cannot become context).
+                } else {
+                    // Out of range: leave the line untouched in the staged tree.
+                    // Any removal (replacement OR pure deletion) demotes to
+                    // context so the patch stays contiguous and `git apply`
+                    // doesn't fuzz; the addition of a replacement drops, and a
+                    // pure insertion drops (it has no old line to keep).
                     if let Some(r) = rem {
                         new_lines.push(DiffLine::Context((*r).clone()));
                     }
                 }
-                // else: out-of-range pure deletion -> drop entirely. It occupies
-                // no new-file line, so the cursor must NOT advance, or later
-                // in-range changes would be measured against the wrong line.
 
                 if add.is_some() {
                     *new_cursor += 1;
@@ -1675,13 +1674,17 @@ Binary files a/image.png and b/image.png differ
         };
         hunk.anchor = Hunk::compute_anchor(&hunk.content());
 
-        // Stage only new-line 3 (d->D2). The out-of-range `b` deletion drops
-        // entirely (it has no new-file line); the in-range change survives.
+        // Stage only new-line 3 (d->D2). The out-of-range `b` deletion is left
+        // unstaged by demoting it to context (the line stays in the index and
+        // the patch stays contiguous for `git apply`), but it must NOT advance
+        // the new-file cursor — `b` has no working-tree line, so the in-range
+        // change at line 3 is still selected.
         let trimmed = hunk.restrict_to_lines(&[(3, 3)]).unwrap();
         assert_eq!(
             trimmed.lines,
             vec![
                 DiffLine::Context("a".to_string()),
+                DiffLine::Context("b".to_string()),
                 DiffLine::Context("c".to_string()),
                 DiffLine::Remove("d".to_string()),
                 DiffLine::Add("D2".to_string()),

@@ -318,6 +318,28 @@ fn test_lines_stages_single_insertion() {
 }
 
 #[test]
+fn test_lines_with_unstaged_deletion_before_change() {
+    let dir = setup_git_repo();
+    // Delete b (new-file line accounting) AND change d->D2. The deletion is not
+    // in the requested range, so it must be left out of the staged patch while
+    // the d->D2 change at new-line 3 is still selected. The dropped deletion
+    // must demote to context (not vanish) or `git apply` would fuzz/fail on the
+    // now non-contiguous patch.
+    commit_initial(&dir, "g.txt", "a\nb\nc\nd\ne\n");
+    fs::write(dir.path().join("g.txt"), "a\nc\nD2\ne\n").unwrap();
+
+    Command::cargo_bin("gah")
+        .unwrap()
+        .args(["add", "g.txt", "--lines", "3"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Only d->D2 staged; b stays in the index (its deletion is unstaged).
+    assert_eq!(staged_content(&dir, "g.txt"), "a\nb\nc\nD2\ne\n");
+}
+
+#[test]
 fn test_lines_no_match_in_range() {
     let dir = setup_git_repo();
     commit_initial(&dir, "g.txt", "a\nb\nc\n");
