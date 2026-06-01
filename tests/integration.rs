@@ -212,3 +212,122 @@ fn test_not_a_git_repo() {
         .failure()
         .stderr(predicate::str::contains("not a git repository"));
 }
+
+fn commit_initial(dir: &TempDir, name: &str, content: &str) {
+    fs::write(dir.path().join(name), content).unwrap();
+    Command::new("git")
+        .args(["add", name])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "initial"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+}
+
+fn staged_content(dir: &TempDir, name: &str) -> String {
+    let out = Command::new("git")
+        .args(["show", &format!(":{name}")])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+#[test]
+fn test_split_separates_distant_changes() {
+    let dir = setup_git_repo();
+    // Two changes far enough apart that --split yields two hunks.
+    commit_initial(&dir, "f.txt", "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n");
+    fs::write(dir.path().join("f.txt"), "a\nB\nc\nd\ne\nf\ng\nh\nI\nj\n").unwrap();
+
+    let mut cmd = Command::cargo_bin("gah").unwrap();
+    cmd.args(["preview", "f.txt", "--split"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 hunks"));
+}
+
+#[test]
+fn test_split_stages_one_change_only() {
+    let dir = setup_git_repo();
+    commit_initial(&dir, "f.txt", "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n");
+    fs::write(dir.path().join("f.txt"), "a\nB\nc\nd\ne\nf\ng\nh\nI\nj\n").unwrap();
+
+    // Grab an anchor for the first change from --split preview json.
+    let preview = Command::cargo_bin("gah")
+        .unwrap()
+        .args(["preview", "f.txt", "--split", "--json"])
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let first_anchor = json["hunks"][0]["anchor"].as_str().unwrap().to_string();
+
+    Command::cargo_bin("gah")
+        .unwrap()
+        .args(["add", "f.txt", "--split", "-a", &first_anchor])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Only b->B staged; i->I untouched in the index.
+    assert_eq!(
+        staged_content(&dir, "f.txt"),
+        "a\nB\nc\nd\ne\nf\ng\nh\ni\nj\n"
+    );
+}
+
+#[test]
+fn test_lines_stages_single_changed_line_in_block() {
+    let dir = setup_git_repo();
+    // Adjacent replacement block: git can't split this even at -U0.
+    commit_initial(&dir, "g.txt", "a\nb\nc\nd\ne\n");
+    fs::write(dir.path().join("g.txt"), "a\nB2\nC3\nD4\ne\n").unwrap();
+
+    Command::cargo_bin("gah")
+        .unwrap()
+        .args(["add", "g.txt", "--lines", "3"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Only new-line 3 (c->C3) staged; b and d remain original in the index.
+    assert_eq!(staged_content(&dir, "g.txt"), "a\nb\nC3\nd\ne\n");
+}
+
+#[test]
+fn test_lines_stages_single_insertion() {
+    let dir = setup_git_repo();
+    commit_initial(&dir, "h.txt", "a\nb\nc\n");
+    // Insert X, Y, Z at new lines 2, 4, 6.
+    fs::write(dir.path().join("h.txt"), "a\nX\nb\nY\nc\nZ\n").unwrap();
+
+    Command::cargo_bin("gah")
+        .unwrap()
+        .args(["add", "h.txt", "--lines", "4"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Only Y inserted, at the correct position.
+    assert_eq!(staged_content(&dir, "h.txt"), "a\nb\nY\nc\n");
+}
+
+#[test]
+fn test_lines_no_match_in_range() {
+    let dir = setup_git_repo();
+    commit_initial(&dir, "g.txt", "a\nb\nc\n");
+    fs::write(dir.path().join("g.txt"), "a\nB\nc\n").unwrap();
+
+    Command::cargo_bin("gah")
+        .unwrap()
+        .args(["add", "g.txt", "--lines", "99"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No hunks match"));
+}

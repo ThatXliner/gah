@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-Plugin-blueviolet)](https://github.com/ThatXliner/gah)
 
-Non-interactive hunk-based staging for git. Stage specific hunks by index, content anchor, regex, or line range—no interactive prompts required.
+Non-interactive hunk-based staging for git. Stage specific hunks by index, content anchor, regex, or line range—no interactive prompts required. Split hunks into smaller pieces and stage individual changed lines, the non-interactive equivalent of `git add -p`'s split and edit modes.
 
 ![gah demo](demo.gif)
 
@@ -107,15 +107,34 @@ gah add src/main.rs --grep "TODO"
 gah add src/main.rs --grep "debug" --invert
 ```
 
-### Stage by line range
+### Stage by line range (partial hunks)
+
+`--lines` stages only the changed lines within the given working-tree range, trimming each matched hunk down to that range. Additions outside the range are dropped; deletions outside the range are left in place. This lets you stage a single changed line out of a larger block—something `git add -p`'s split mode can't do for adjacent changes.
 
 ```bash
-# Stage hunks overlapping line range (working tree lines)
+# Stage only the changes on lines 100-150 (working tree lines)
 gah add src/main.rs --lines 100-150
+
+# Stage one line out of a multi-line edit
+gah add src/main.rs --lines 142
 
 # Multiple ranges
 gah add src/main.rs --lines 100-150,200-250
 ```
+
+### Split hunks into smaller pieces
+
+By default git groups nearby changes into one hunk. `--split` re-diffs with zero context so each change becomes its own hunk, then you can preview or stage them independently.
+
+```bash
+# Preview the finest-grained hunks
+gah preview src/main.rs --split
+
+# Stage one of the split-out changes by anchor
+gah add src/main.rs --split --anchor Beast
+```
+
+Adjacent changed lines can't be separated by `--split` (git keeps them in one hunk even at zero context)—use `--lines` to pick individual lines out of such a block.
 
 ### Stage by AST symbol (requires tree-sitter feature)
 

@@ -56,6 +56,160 @@ impl Hunk {
         self.new_start + self.new_count.saturating_sub(1)
     }
 
+    /// Recompute old/new counts from the current `lines`, leaving the start
+    /// positions untouched, and rebuild the `@@` header to match. Used after
+    /// trimming a hunk to a line subset.
+    fn recount(&mut self) {
+        self.old_count = self
+            .lines
+            .iter()
+            .filter(|l| matches!(l, DiffLine::Context(_) | DiffLine::Remove(_)))
+            .count() as u32;
+        self.new_count = self
+            .lines
+            .iter()
+            .filter(|l| matches!(l, DiffLine::Context(_) | DiffLine::Add(_)))
+            .count() as u32;
+
+        let fmt = |start: u32, count: u32| {
+            if count == 1 {
+                format!("{start}")
+            } else {
+                format!("{start},{count}")
+            }
+        };
+        let ctx = self
+            .function_context
+            .as_deref()
+            .map(|c| format!(" {c}"))
+            .unwrap_or_default();
+        self.header = format!(
+            "@@ -{} +{} @@{ctx}",
+            fmt(self.old_start, self.old_count),
+            fmt(self.new_start, self.new_count),
+        );
+    }
+
+    /// Restrict this hunk to only the changes whose new-file line numbers fall
+    /// within `[start, end]`. Changed lines outside the range are neutralized:
+    /// additions are dropped, removals become context. Pure-context-only
+    /// results (no remaining change) yield `None`.
+    ///
+    /// This is the non-interactive equivalent of `git add -p`'s edit mode: it
+    /// lets a single hunk be staged piecewise. The resulting patch has zero or
+    /// few context lines, so it must be applied with `--unidiff-zero`.
+    pub fn restrict_to_lines(&self, start: u32, end: u32) -> Option<Hunk> {
+        // Git emits a replacement as a run of removals followed by a run of
+        // additions (e.g. `-b -c -d +B +C +D`), so a remove and the add that
+        // replaces it are NOT adjacent in `self.lines`. To stage by new-file
+        // line we must pair them positionally: removal *i* of a run lines up
+        // with addition *i*, both occupying new-file line `new_cursor + i`.
+        //
+        // We walk the hunk, buffering each remove/add run, and flush the run as
+        // interleaved (remove, add) pairs in new-file order. For each pair we
+        // decide by its new-file line: in range -> keep the change; out of
+        // range -> demote the removal to context and drop the addition, leaving
+        // that line untouched in the staged result.
+        let mut new_lines = Vec::with_capacity(self.lines.len());
+        let mut new_cursor = self.new_start;
+        let mut kept_change = false;
+
+        let mut removes: Vec<&String> = Vec::new();
+        let mut adds: Vec<&String> = Vec::new();
+
+        // Flush a buffered replacement run as positional pairs.
+        let flush = |removes: &mut Vec<&String>,
+                     adds: &mut Vec<&String>,
+                     new_cursor: &mut u32,
+                     new_lines: &mut Vec<DiffLine>,
+                     kept_change: &mut bool| {
+            let pairs = removes.len().max(adds.len());
+            for i in 0..pairs {
+                let line = *new_cursor;
+                let in_range = line >= start && line <= end;
+                let rem = removes.get(i);
+                let add = adds.get(i);
+                if in_range {
+                    if let Some(r) = rem {
+                        new_lines.push(DiffLine::Remove((*r).clone()));
+                        *kept_change = true;
+                    }
+                    if let Some(a) = add {
+                        new_lines.push(DiffLine::Add((*a).clone()));
+                        *kept_change = true;
+                    }
+                } else {
+                    // Keep this line as-is in the staged tree: a removal becomes
+                    // context (old line stays); an addition with no removal is
+                    // dropped (it isn't in the old file, so cannot be context).
+                    if let Some(r) = rem {
+                        new_lines.push(DiffLine::Context((*r).clone()));
+                    }
+                }
+                // Advance the new-file cursor only when this pair occupies a
+                // new-file line: a replacement (rem+add) or a pure insertion
+                // (add only) does; a pure deletion (rem only, out of range and
+                // dropped entirely) does not. An in-range pure deletion also
+                // does not occupy a new line, but it has already been emitted.
+                if add.is_some() {
+                    *new_cursor += 1;
+                } else if rem.is_some() && in_range {
+                    // In-range deletion removes an old line, no new line.
+                } else if rem.is_some() {
+                    // Out-of-range remove demoted to context: keeps the line in
+                    // both old and new, so the new cursor advances.
+                    *new_cursor += 1;
+                }
+            }
+            removes.clear();
+            adds.clear();
+        };
+
+        for line in &self.lines {
+            match line {
+                DiffLine::Remove(s) => removes.push(s),
+                DiffLine::Add(s) => adds.push(s),
+                DiffLine::Context(s) => {
+                    flush(
+                        &mut removes,
+                        &mut adds,
+                        &mut new_cursor,
+                        &mut new_lines,
+                        &mut kept_change,
+                    );
+                    new_lines.push(DiffLine::Context(s.clone()));
+                    new_cursor += 1;
+                }
+            }
+        }
+        flush(
+            &mut removes,
+            &mut adds,
+            &mut new_cursor,
+            &mut new_lines,
+            &mut kept_change,
+        );
+
+        if !kept_change {
+            return None;
+        }
+
+        let mut hunk = Hunk {
+            index: self.index,
+            anchor: String::new(),
+            header: String::new(),
+            old_start: self.old_start,
+            old_count: 0,
+            new_start: self.new_start,
+            new_count: 0,
+            lines: new_lines,
+            function_context: self.function_context.clone(),
+        };
+        hunk.recount();
+        hunk.anchor = Hunk::compute_anchor(&hunk.content());
+        Some(hunk)
+    }
+
     pub fn compute_anchor(content: &str) -> String {
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
@@ -1348,5 +1502,113 @@ Binary files a/image.png and b/image.png differ
 "#;
         let files = parse_diff(diff).unwrap();
         assert!(files.is_empty());
+    }
+
+    fn replacement_block_hunk() -> Hunk {
+        // Mirrors git's grouped output for replacing lines 2,3,4:
+        //   a / -b -c -d / +B2 +C3 +D4 / e   (new lines a=1,B2=2,C3=3,D4=4,e=5)
+        let mut hunk = Hunk {
+            index: 1,
+            anchor: String::new(),
+            header: "@@ -1,5 +1,5 @@".to_string(),
+            old_start: 1,
+            old_count: 5,
+            new_start: 1,
+            new_count: 5,
+            lines: vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Remove("b".to_string()),
+                DiffLine::Remove("c".to_string()),
+                DiffLine::Remove("d".to_string()),
+                DiffLine::Add("B2".to_string()),
+                DiffLine::Add("C3".to_string()),
+                DiffLine::Add("D4".to_string()),
+                DiffLine::Context("e".to_string()),
+            ],
+            function_context: None,
+        };
+        hunk.anchor = Hunk::compute_anchor(&hunk.content());
+        hunk
+    }
+
+    #[test]
+    fn test_restrict_replacement_middle() {
+        // Stage only new-line 3 (c -> C3); b/d removals demote to context,
+        // their additions drop. Pairing must keep the kept remove next to its
+        // add despite git's grouped ordering.
+        let trimmed = replacement_block_hunk().restrict_to_lines(3, 3).unwrap();
+        assert_eq!(
+            trimmed.lines,
+            vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Context("b".to_string()),
+                DiffLine::Remove("c".to_string()),
+                DiffLine::Add("C3".to_string()),
+                DiffLine::Context("d".to_string()),
+                DiffLine::Context("e".to_string()),
+            ]
+        );
+        assert_eq!(trimmed.old_count, 5);
+        assert_eq!(trimmed.new_count, 5);
+        assert_eq!(trimmed.old_start, 1);
+        assert_eq!(trimmed.new_start, 1);
+    }
+
+    #[test]
+    fn test_restrict_replacement_range() {
+        // Stage new-lines 2-3 (b->B2, c->C3); d->D4 stays unstaged.
+        let trimmed = replacement_block_hunk().restrict_to_lines(2, 3).unwrap();
+        assert_eq!(
+            trimmed.lines,
+            vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Remove("b".to_string()),
+                DiffLine::Add("B2".to_string()),
+                DiffLine::Remove("c".to_string()),
+                DiffLine::Add("C3".to_string()),
+                DiffLine::Context("d".to_string()),
+                DiffLine::Context("e".to_string()),
+            ]
+        );
+        assert_eq!(trimmed.new_count, 5);
+    }
+
+    #[test]
+    fn test_restrict_no_change_in_range() {
+        // Range covers only unchanged context -> nothing to stage.
+        assert!(replacement_block_hunk().restrict_to_lines(1, 1).is_none());
+    }
+
+    #[test]
+    fn test_restrict_insertion() {
+        // a / +X / b : insertion sits at new-line 2.
+        let mut hunk = Hunk {
+            index: 1,
+            anchor: String::new(),
+            header: "@@ -1,2 +1,3 @@".to_string(),
+            old_start: 1,
+            old_count: 2,
+            new_start: 1,
+            new_count: 3,
+            lines: vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Add("X".to_string()),
+                DiffLine::Context("b".to_string()),
+            ],
+            function_context: None,
+        };
+        hunk.anchor = Hunk::compute_anchor(&hunk.content());
+
+        let trimmed = hunk.restrict_to_lines(2, 2).unwrap();
+        assert_eq!(
+            trimmed.lines,
+            vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Add("X".to_string()),
+                DiffLine::Context("b".to_string()),
+            ]
+        );
+        // Out-of-range insertion drops entirely.
+        assert!(hunk.restrict_to_lines(5, 5).is_none());
     }
 }
