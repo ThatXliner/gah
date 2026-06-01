@@ -107,10 +107,49 @@ gh release create vX.Y.Z \
 
 Confirm: `gh release view vX.Y.Z --json url -q .url`
 
+## 9. Publish to crates.io
+
+`gah` is a published crate — a release is not done until it is on crates.io.
+This step is easy to forget; the tag and GitHub release do NOT publish the crate.
+
+First confirm what will actually ship, then publish:
+
+```bash
+cargo package --list          # exactly which files go into the crate
+cargo publish --dry-run       # package + compile + verify, no upload
+cargo publish                 # the real upload
+```
+
+Verify it landed:
+
+```bash
+curl -s https://crates.io/api/v1/crates/gah \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['crate']['max_version'])"
+```
+
+**`cargo publish` is irreversible.** A version can never be replaced or deleted,
+only **yanked** (`cargo yank --version X.Y.Z`, undo with `--undo`). Yank stops
+new dependents from selecting it; it does not remove the uploaded artifact. So:
+
+- Run `--dry-run` and eyeball `cargo package --list` BEFORE the real publish.
+- Confirm the version with the user before uploading.
+- If a bad artifact ships (e.g. bloated, wrong files), you cannot fix it in
+  place — yank it and publish a new patch version with the fix.
+
+### Keep the crate lean
+
+`cargo package --list` must contain only source: `src/`, `tests/`, `Cargo.toml`,
+`README.md`, `CHANGELOG.md`, `Cargo.lock`. Demo assets, skills, plugin metadata,
+CI, and docs are excluded via `exclude = [...]` in `Cargo.toml` — if any of those
+reappear in the list, extend `exclude` before publishing.
+
+(Historical note: `demo.gif` is ~1.3MiB. It shipped inside 0.2.2 before the
+`exclude` was added; that artifact is immutable. Never let it back into the list.)
+
 ## Notes
 
-- Pushing tags and publishing a release are outward-facing and effectively
-  irreversible — confirm the version and notes with the user before step 7
-  unless they have already approved the release.
+- Pushing tags, the GitHub release, and `cargo publish` are all outward-facing
+  and effectively irreversible — confirm the version and notes with the user
+  before steps 7 and 9 unless they have already approved the release.
 - This repo gitignores `Cargo.lock`; on a project that tracks it, also stage the
   lockfile in step 6.
