@@ -12,7 +12,6 @@ Stage specific hunks non-interactively. Use instead of `git add -p` which requir
 1. **MUST use anchors, not indices** — Indices shift after each staging operation. Anchors stay stable.
 2. **MUST preview before staging** — Never guess hunk numbers. Always run `gah preview` first.
 3. **MUST use `--dry-run` for destructive or uncertain operations** — Verify before committing.
-4. **Use plain text output** — ANSI colors auto-disabled when piped. No need for `--json` in most cases.
 
 ## When to Use
 
@@ -39,8 +38,6 @@ Stage specific hunks non-interactively. Use instead of `git add -p` which requir
 gah preview <file>        # See all hunks with indices and anchors
 gah preview --all         # All modified files
 ```
-
-Output is plain text when piped (no ANSI codes), so you can read it directly.
 
 ### Stage hunks
 
