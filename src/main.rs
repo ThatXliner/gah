@@ -375,11 +375,7 @@ fn main() {
             if let Some(ref ranges) = hunk_filter.lines {
                 trimmed = selected
                     .iter()
-                    .filter_map(|h| {
-                        ranges
-                            .iter()
-                            .find_map(|(start, end)| h.restrict_to_lines(*start, *end))
-                    })
+                    .filter_map(|h| h.restrict_to_lines(ranges))
                     .collect();
                 selected = trimmed.iter().collect();
             }

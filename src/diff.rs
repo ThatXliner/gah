@@ -91,14 +91,17 @@ impl Hunk {
     }
 
     /// Restrict this hunk to only the changes whose new-file line numbers fall
-    /// within `[start, end]`. Changed lines outside the range are neutralized:
-    /// additions are dropped, removals become context. Pure-context-only
-    /// results (no remaining change) yield `None`.
+    /// within any of `ranges` (inclusive). Changes outside every range are
+    /// neutralized: a replacement keeps its old line (its removal demotes to
+    /// context, its addition drops), a pure insertion drops, and a pure
+    /// deletion drops (its old line stays). A result with no remaining change
+    /// yields `None`.
     ///
     /// This is the non-interactive equivalent of `git add -p`'s edit mode: it
-    /// lets a single hunk be staged piecewise. The resulting patch has zero or
-    /// few context lines, so it must be applied with `--unidiff-zero`.
-    pub fn restrict_to_lines(&self, start: u32, end: u32) -> Option<Hunk> {
+    /// lets a single hunk be staged piecewise. Trimming can leave few or zero
+    /// context lines; a zero-context result must be applied with
+    /// `--unidiff-zero` (see `apply::apply_hunks`).
+    pub fn restrict_to_lines(&self, ranges: &[(u32, u32)]) -> Option<Hunk> {
         // Git emits a replacement as a run of removals followed by a run of
         // additions (e.g. `-b -c -d +B +C +D`), so a remove and the add that
         // replaces it are NOT adjacent in `self.lines`. To stage by new-file
@@ -108,8 +111,8 @@ impl Hunk {
         // We walk the hunk, buffering each remove/add run, and flush the run as
         // interleaved (remove, add) pairs in new-file order. For each pair we
         // decide by its new-file line: in range -> keep the change; out of
-        // range -> demote the removal to context and drop the addition, leaving
-        // that line untouched in the staged result.
+        // range -> leave that line untouched in the staged result (how depends
+        // on the pair's kind; see `flush`).
         let mut new_lines = Vec::with_capacity(self.lines.len());
         let mut new_cursor = self.new_start;
         let mut kept_change = false;
@@ -126,9 +129,16 @@ impl Hunk {
             let pairs = removes.len().max(adds.len());
             for i in 0..pairs {
                 let line = *new_cursor;
-                let in_range = line >= start && line <= end;
+                let in_range = ranges
+                    .iter()
+                    .any(|(start, end)| line >= *start && line <= *end);
                 let rem = removes.get(i);
                 let add = adds.get(i);
+                // Classify the position by what occupies new-file line `line`:
+                //   replacement  (rem + add) -> occupies the line
+                //   pure insert  (add only)  -> occupies the line
+                //   pure delete  (rem only)  -> occupies NO new-file line
+                // Only positions that occupy a new-file line advance the cursor.
                 if in_range {
                     if let Some(r) = rem {
                         new_lines.push(DiffLine::Remove((*r).clone()));
@@ -138,26 +148,20 @@ impl Hunk {
                         new_lines.push(DiffLine::Add((*a).clone()));
                         *kept_change = true;
                     }
-                } else {
-                    // Keep this line as-is in the staged tree: a removal becomes
-                    // context (old line stays); an addition with no removal is
-                    // dropped (it isn't in the old file, so cannot be context).
+                } else if add.is_some() {
+                    // Out-of-range position that occupies a new-file line:
+                    // a replacement demotes its removal to context (the old
+                    // line survives unchanged); a pure insertion is dropped
+                    // (it isn't in the old file, so cannot become context).
                     if let Some(r) = rem {
                         new_lines.push(DiffLine::Context((*r).clone()));
                     }
                 }
-                // Advance the new-file cursor only when this pair occupies a
-                // new-file line: a replacement (rem+add) or a pure insertion
-                // (add only) does; a pure deletion (rem only, out of range and
-                // dropped entirely) does not. An in-range pure deletion also
-                // does not occupy a new line, but it has already been emitted.
+                // else: out-of-range pure deletion -> drop entirely. It occupies
+                // no new-file line, so the cursor must NOT advance, or later
+                // in-range changes would be measured against the wrong line.
+
                 if add.is_some() {
-                    *new_cursor += 1;
-                } else if rem.is_some() && in_range {
-                    // In-range deletion removes an old line, no new line.
-                } else if rem.is_some() {
-                    // Out-of-range remove demoted to context: keeps the line in
-                    // both old and new, so the new cursor advances.
                     *new_cursor += 1;
                 }
             }
@@ -1536,7 +1540,9 @@ Binary files a/image.png and b/image.png differ
         // Stage only new-line 3 (c -> C3); b/d removals demote to context,
         // their additions drop. Pairing must keep the kept remove next to its
         // add despite git's grouped ordering.
-        let trimmed = replacement_block_hunk().restrict_to_lines(3, 3).unwrap();
+        let trimmed = replacement_block_hunk()
+            .restrict_to_lines(&[(3, 3)])
+            .unwrap();
         assert_eq!(
             trimmed.lines,
             vec![
@@ -1557,7 +1563,9 @@ Binary files a/image.png and b/image.png differ
     #[test]
     fn test_restrict_replacement_range() {
         // Stage new-lines 2-3 (b->B2, c->C3); d->D4 stays unstaged.
-        let trimmed = replacement_block_hunk().restrict_to_lines(2, 3).unwrap();
+        let trimmed = replacement_block_hunk()
+            .restrict_to_lines(&[(2, 3)])
+            .unwrap();
         assert_eq!(
             trimmed.lines,
             vec![
@@ -1576,7 +1584,11 @@ Binary files a/image.png and b/image.png differ
     #[test]
     fn test_restrict_no_change_in_range() {
         // Range covers only unchanged context -> nothing to stage.
-        assert!(replacement_block_hunk().restrict_to_lines(1, 1).is_none());
+        assert!(
+            replacement_block_hunk()
+                .restrict_to_lines(&[(1, 1)])
+                .is_none()
+        );
     }
 
     #[test]
@@ -1599,7 +1611,7 @@ Binary files a/image.png and b/image.png differ
         };
         hunk.anchor = Hunk::compute_anchor(&hunk.content());
 
-        let trimmed = hunk.restrict_to_lines(2, 2).unwrap();
+        let trimmed = hunk.restrict_to_lines(&[(2, 2)]).unwrap();
         assert_eq!(
             trimmed.lines,
             vec![
@@ -1609,6 +1621,76 @@ Binary files a/image.png and b/image.png differ
             ]
         );
         // Out-of-range insertion drops entirely.
-        assert!(hunk.restrict_to_lines(5, 5).is_none());
+        assert!(hunk.restrict_to_lines(&[(5, 5)]).is_none());
+    }
+
+    #[test]
+    fn test_restrict_multiple_ranges() {
+        // Stage new-lines 2 and 4 (b->B2, d->D4) but skip line 3 (c->C3).
+        // Regression: a hunk spanning two disjoint requested ranges must keep
+        // changes from *both*, not just the first matching range.
+        let trimmed = replacement_block_hunk()
+            .restrict_to_lines(&[(2, 2), (4, 4)])
+            .unwrap();
+        assert_eq!(
+            trimmed.lines,
+            vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Remove("b".to_string()),
+                DiffLine::Add("B2".to_string()),
+                DiffLine::Context("c".to_string()),
+                DiffLine::Remove("d".to_string()),
+                DiffLine::Add("D4".to_string()),
+                DiffLine::Context("e".to_string()),
+            ]
+        );
+        assert_eq!(trimmed.new_count, 5);
+    }
+
+    #[test]
+    fn test_restrict_pure_deletion_before_change() {
+        // A standalone deletion before an in-range replacement, with a context
+        // line separating the two runs (git's typical output). New-file lines:
+        // a=1, c=2, D2=3, e=4 (b is deleted, occupies no new line). Staging
+        // new-line 3 (d->D2) must NOT be thrown off by the earlier deletion of
+        // b: a pure deletion consumes no new-file line, so the cursor stays put.
+        //   a / -b / c / -d +D2 / e
+        let mut hunk = Hunk {
+            index: 1,
+            anchor: String::new(),
+            header: "@@ -1,5 +1,4 @@".to_string(),
+            old_start: 1,
+            old_count: 5,
+            new_start: 1,
+            new_count: 4,
+            lines: vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Remove("b".to_string()),
+                DiffLine::Context("c".to_string()),
+                DiffLine::Remove("d".to_string()),
+                DiffLine::Add("D2".to_string()),
+                DiffLine::Context("e".to_string()),
+            ],
+            function_context: None,
+        };
+        hunk.anchor = Hunk::compute_anchor(&hunk.content());
+
+        // Stage only new-line 3 (d->D2). The out-of-range `b` deletion drops
+        // entirely (it has no new-file line); the in-range change survives.
+        let trimmed = hunk.restrict_to_lines(&[(3, 3)]).unwrap();
+        assert_eq!(
+            trimmed.lines,
+            vec![
+                DiffLine::Context("a".to_string()),
+                DiffLine::Context("c".to_string()),
+                DiffLine::Remove("d".to_string()),
+                DiffLine::Add("D2".to_string()),
+                DiffLine::Context("e".to_string()),
+            ]
+        );
+
+        // Stage only new-line 1 (the deletion's predecessor): nothing changes
+        // there, and the in-range replacement at line 3 is left untouched.
+        assert!(hunk.restrict_to_lines(&[(1, 1)]).is_none());
     }
 }
