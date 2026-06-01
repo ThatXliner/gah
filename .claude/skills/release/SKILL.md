@@ -127,15 +127,6 @@ curl -s https://crates.io/api/v1/crates/gah \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['crate']['max_version'])"
 ```
 
-**`cargo publish` is irreversible.** A version can never be replaced or deleted,
-only **yanked** (`cargo yank --version X.Y.Z`, undo with `--undo`). Yank stops
-new dependents from selecting it; it does not remove the uploaded artifact. So:
-
-- Run `--dry-run` and eyeball `cargo package --list` BEFORE the real publish.
-- Confirm the version with the user before uploading.
-- If a bad artifact ships (e.g. bloated, wrong files), you cannot fix it in
-  place — yank it and publish a new patch version with the fix.
-
 ### Keep the crate lean
 
 `cargo package --list` must contain only source: `src/`, `tests/`, `Cargo.toml`,
