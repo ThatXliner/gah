@@ -1,0 +1,48 @@
+<svg width="900" height="320" viewBox="0 0 900 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="gah - Git Add Hunks">
+  <title>gah — Git Add Hunks</title>
+
+  <!-- banner bg -->
+  <rect width="900" height="320" rx="40" fill="#0d1117"/>
+
+  <!-- icon tile -->
+  <rect x="20" y="20" width="280" height="280" rx="56" fill="#161b22"/>
+  <rect x="24" y="24" width="272" height="272" rx="52" fill="none" stroke="#21262d" stroke-width="2"/>
+
+  <g transform="translate(20 20) scale(0.546875)">
+    <!-- diff hunk block -->
+    <rect x="56"  y="150" width="200" height="40" rx="8" fill="#3d1c1c"/>
+    <rect x="56"  y="150" width="8"  height="40" rx="4" fill="#f85149"/>
+    <rect x="80"  y="164" width="120" height="12" rx="6" fill="#f85149" opacity="0.85"/>
+
+    <rect x="56"  y="200" width="160" height="40" rx="8" fill="#3d1c1c"/>
+    <rect x="56"  y="200" width="8"  height="40" rx="4" fill="#f85149"/>
+    <rect x="80"  y="214" width="84"  height="12" rx="6" fill="#f85149" opacity="0.85"/>
+
+    <rect x="56"  y="272" width="200" height="40" rx="8" fill="#13311f"/>
+    <rect x="56"  y="272" width="8"  height="40" rx="4" fill="#3fb950"/>
+    <rect x="80"  y="286" width="140" height="12" rx="6" fill="#3fb950" opacity="0.9"/>
+
+    <rect x="56"  y="322" width="170" height="40" rx="8" fill="#13311f"/>
+    <rect x="56"  y="322" width="8"  height="40" rx="4" fill="#3fb950"/>
+    <rect x="80"  y="336" width="100" height="12" rx="6" fill="#3fb950" opacity="0.9"/>
+
+    <!-- cut line -->
+    <line x1="28" y1="256" x2="284" y2="256"
+          stroke="#8b949e" stroke-width="4" stroke-linecap="round" stroke-dasharray="2 18"/>
+
+    <!-- scissors -->
+    <g transform="translate(292 256)" stroke="#e6edf3" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <line x1="0" y1="0" x2="44" y2="-26"/>
+      <line x1="0" y1="0" x2="44" y2="26"/>
+      <circle cx="-16" cy="-22" r="16"/>
+      <circle cx="-16" cy="22"  r="16"/>
+      <circle cx="0" cy="0" r="5" fill="#e6edf3" stroke="none"/>
+    </g>
+  </g>
+
+  <!-- wordmark -->
+  <text x="345" y="190" font-family="ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace"
+        font-size="150" font-weight="700" fill="#e6edf3" letter-spacing="-4">gah</text>
+  <text x="350" y="248" font-family="ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace"
+        font-size="34" font-weight="500" fill="#8b949e" letter-spacing="6">GIT ADD HUNKS</text>
+</svg>

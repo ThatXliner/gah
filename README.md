@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo-wordmark.svg" alt="gah — Git Add Hunks" width="540">
+</p>
+
 # gah - Git Add Hunks
 
 [![CI](https://github.com/ThatXliner/gah/actions/workflows/ci.yml/badge.svg)](https://github.com/ThatXliner/gah/actions/workflows/ci.yml)
