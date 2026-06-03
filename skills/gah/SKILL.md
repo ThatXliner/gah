@@ -19,6 +19,8 @@ Stage specific hunks non-interactively. Use instead of `git add -p` which requir
 - Separating unrelated changes into different commits
 - Excluding debug/log/console statements from a commit
 - Staging only changes relevant to a specific task
+- Splitting one large hunk into smaller pieces (`--split`)
+- Staging individual changed lines out of a block (`--lines`)
 
 ## Workflow
 
@@ -54,8 +56,10 @@ gah add <file> --hunks 1-3
 gah add <file> --grep "pattern"
 gah add <file> --grep "debug|console" --invert  # exclude matches
 
-# By line range (working tree lines)
+# By line range — stages ONLY the changed lines in the range, trimming
+# the hunk to those lines (NOT the whole overlapping hunk)
 gah add <file> --lines 100-150
+gah add <file> --lines 142             # one line out of a multi-line edit
 
 # Combine filters
 gah add <file> --grep "feature" --lines 50-200
@@ -63,6 +67,24 @@ gah add <file> --grep "feature" --lines 50-200
 # Verify first
 gah add <file> -a Foo --dry-run
 ```
+
+### Split hunks into smaller pieces
+
+Git lumps nearby changes into one hunk. `--split` re-diffs at zero context so
+each change is its own hunk — preview them, then stage independently.
+
+```bash
+gah preview <file> --split           # finest-grained hunks + anchors
+gah add <file> --split -a <anchor>   # stage one split-out change
+```
+
+**Splitting strategy:**
+
+- Use `--split` to separate changes git merged into one hunk (gap ≥ 1 line).
+- Use `--lines` to stage individual lines when changes are **adjacent** —
+  git (and `--split`) cannot break an adjacent replacement block apart, but
+  `--lines` trims it to the exact lines you name.
+- Always `gah preview --split` first to see the resolved hunks and anchors.
 
 ## Error Handling
 

@@ -39,6 +39,10 @@ enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+
+        /// Split hunks as finely as possible (zero context) before previewing
+        #[arg(long)]
+        split: bool,
     },
 
     /// Stage specific hunks
@@ -62,9 +66,15 @@ enum Commands {
         #[arg(long)]
         invert: bool,
 
-        /// Line ranges in working tree (e.g., 100-150,200-250)
+        /// Line ranges in working tree (e.g., 100-150,200-250). Stages only the
+        /// changed lines within the range, trimming each matched hunk.
         #[arg(long)]
         lines: Option<String>,
+
+        /// Split hunks as finely as possible (zero context) before filtering,
+        /// so anchors/indices/grep operate on the smallest possible chunks
+        #[arg(long)]
+        split: bool,
 
         /// AST symbol names to match (requires tree-sitter feature)
         #[arg(long, short = 's')]
@@ -80,9 +90,13 @@ enum Commands {
     },
 }
 
-fn get_diff(file: Option<&PathBuf>) -> Result<String, String> {
+fn get_diff(file: Option<&PathBuf>, unified: Option<u32>) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.args(["diff", "--no-color"]);
+
+    if let Some(u) = unified {
+        cmd.arg(format!("--unified={u}"));
+    }
 
     if let Some(f) = file {
         cmd.arg("--").arg(f);
@@ -114,13 +128,18 @@ fn main() {
     }
 
     match cli.command {
-        Commands::Preview { file, all, json } => {
+        Commands::Preview {
+            file,
+            all,
+            json,
+            split,
+        } => {
             if !all && file.is_none() {
                 eprintln!("error: specify a file or use --all");
                 exit(1);
             }
 
-            let diff_output = match get_diff(file.as_ref()) {
+            let diff_output = match get_diff(file.as_ref(), if split { Some(0) } else { None }) {
                 Ok(d) => d,
                 Err(e) => {
                     eprintln!("error: {e}");
@@ -173,6 +192,7 @@ fn main() {
             grep,
             invert,
             lines,
+            split,
             symbol,
             dry_run,
             json,
@@ -203,7 +223,19 @@ fn main() {
                 exit(1);
             }
 
-            let diff_output = match get_diff(Some(&file)) {
+            // --split needs fine-grained hunks: re-diff at zero context so each
+            // change is its own hunk. --lines does its own trimming after
+            // selection (below) and relies on the default context to retain
+            // surrounding anchor lines (a zero-context single insertion is
+            // placed unreliably by `git apply`), so --lines takes precedence:
+            // when both are given, --split is ignored and default context kept.
+            let unified = if split && lines.is_none() {
+                Some(0)
+            } else {
+                None
+            };
+
+            let diff_output = match get_diff(Some(&file), unified) {
                 Ok(d) => d,
                 Err(e) => {
                     eprintln!("error: {e}");
@@ -340,8 +372,28 @@ fn main() {
                 }
             }
 
+            // Trim selected hunks to the exact line range. Each matched hunk is
+            // restricted to its changed lines within the range; additions
+            // outside become dropped, removals outside become context. Owned
+            // results live in `trimmed` so `selected` can re-borrow them.
+            let trimmed: Vec<crate::diff::Hunk>;
+            // Did `--lines` trimming empty an otherwise non-empty selection?
+            // That points the blame at the range, not the other filters.
+            let mut emptied_by_lines = false;
+            if let Some(ref ranges) = hunk_filter.lines {
+                let had_hunks = !selected.is_empty();
+                trimmed = selected
+                    .iter()
+                    .filter_map(|h| h.restrict_to_lines(ranges))
+                    .collect();
+                selected = trimmed.iter().collect();
+                emptied_by_lines = had_hunks && selected.is_empty();
+            }
+
             if selected.is_empty() {
-                if let Some(ref pattern) = grep {
+                if emptied_by_lines {
+                    eprintln!("No changed lines in the specified --lines range(s)");
+                } else if let Some(ref pattern) = grep {
                     eprintln!("No hunks match pattern '{pattern}'");
                 } else {
                     eprintln!("No hunks match the specified filters");

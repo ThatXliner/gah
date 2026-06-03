@@ -54,8 +54,19 @@ pub fn apply_hunks(file: &DiffFile, hunks: &[&Hunk], dry_run: bool) -> Result<()
 
     let patch = reconstruct_patch(file, hunks);
 
+    // Zero-context hunks (from split/--lines trimming) are rejected by a plain
+    // `git apply`; --unidiff-zero relaxes the context requirement. A hunk has
+    // no usable context when none of its lines are context lines.
+    let zero_context = hunks
+        .iter()
+        .any(|h| !h.lines.iter().any(|l| matches!(l, DiffLine::Context(_))));
+
     let mut cmd = Command::new("git");
     cmd.args(["apply", "--cached"]);
+
+    if zero_context {
+        cmd.arg("--unidiff-zero");
+    }
 
     if dry_run {
         cmd.arg("--check");
